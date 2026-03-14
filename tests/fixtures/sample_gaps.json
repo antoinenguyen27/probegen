@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0",
+  "run_id": "stage2-run",
+  "stage1_run_id": "stage1-run",
+  "timestamp": "2026-03-14T10:01:00Z",
+  "unmapped_artifacts": [],
+  "coverage_summary": {
+    "total_relevant_cases": 10,
+    "cases_covering_changed_behavior": 3,
+    "coverage_ratio": 0.3,
+    "platform": "langsmith",
+    "dataset": "citation-agent-evals"
+  },
+  "gaps": [
+    {
+      "gap_id": "gap_001",
+      "artifact_path": "prompts/citation_agent/system_prompt.md",
+      "gap_type": "uncovered",
+      "related_risk_flag": "Conversational questions may receive citations unexpectedly",
+      "description": "No cases cover conversational citation boundaries",
+      "nearest_existing_cases": [
+        {
+          "case_id": "case_a3f2",
+          "input_normalized": "What year was the Paris Agreement signed?",
+          "similarity": 0.71,
+          "classification": "related"
+        }
+      ],
+      "priority": "high",
+      "guardrail_direction": null,
+      "is_conversational": true
+    }
+  ]
+}

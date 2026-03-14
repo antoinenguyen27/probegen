@@ -1,0 +1,34 @@
+{
+  "schema_version": "1.0",
+  "run_id": "stage1-run",
+  "pr_number": 142,
+  "commit_sha": "abc123",
+  "timestamp": "2026-03-14T10:00:00Z",
+  "has_changes": true,
+  "overall_risk": "medium",
+  "pr_intent_summary": "Require citations for factual answers",
+  "pr_description_alignment": "confirmed",
+  "compound_change_detected": false,
+  "changes": [
+    {
+      "artifact_path": "prompts/citation_agent/system_prompt.md",
+      "artifact_type": "system_prompt",
+      "artifact_class": "behavior_defining",
+      "change_type": "modification",
+      "inferred_intent": "Require citations for factual answers",
+      "pr_description_alignment": "confirmed",
+      "unintended_risk_flags": [
+        "Conversational questions may receive citations unexpectedly"
+      ],
+      "affected_components": [
+        "agents/citation_agent.py::CitationAgent"
+      ],
+      "false_negative_risks": [],
+      "false_positive_risks": [],
+      "change_summary": "Added citation instruction",
+      "before_hash": "sha256:111",
+      "after_hash": "sha256:222"
+    }
+  ],
+  "compound_changes": []
+}

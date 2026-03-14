@@ -1,0 +1,129 @@
+name: Probegen
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  pull_request_target:
+    types: [closed]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  probegen-analyze:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install probegen
+          npm install -g @anthropic-ai/claude-code
+
+      - name: Generate MCP config
+        run: probegen setup-mcp
+        env:
+          LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
+          BRAINTRUST_API_KEY: ${{ secrets.BRAINTRUST_API_KEY }}
+          PHOENIX_API_KEY: ${{ secrets.PHOENIX_API_KEY }}
+
+      - name: Stage 1 — Change Detection
+        run: |
+          probegen run-stage 1 \
+            --pr-number ${{ github.event.pull_request.number }} \
+            --base-branch ${{ github.event.pull_request.base.ref }} \
+            --output .probegen/stage1.json
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
+
+      - name: Check gate
+        id: gate
+        run: |
+          has_changes=$(python -c "
+          import json
+          m = json.load(open('.probegen/stage1.json'))
+          print('true' if m.get('has_changes') else 'false')
+          ")
+          echo "has_changes=$has_changes" >> $GITHUB_OUTPUT
+
+      - name: Stage 2 — Coverage Analysis
+        if: steps.gate.outputs.has_changes == 'true'
+        run: |
+          probegen run-stage 2 \
+            --manifest .probegen/stage1.json \
+            --output .probegen/stage2.json
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
+          BRAINTRUST_API_KEY: ${{ secrets.BRAINTRUST_API_KEY }}
+          PHOENIX_API_KEY: ${{ secrets.PHOENIX_API_KEY }}
+
+      - name: Stage 3 — Probe Generation
+        if: steps.gate.outputs.has_changes == 'true'
+        run: |
+          probegen run-stage 3 \
+            --manifest .probegen/stage1.json \
+            --gaps .probegen/stage2.json \
+            --output .probegen/stage3.json
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - name: Post PR comment
+        if: steps.gate.outputs.has_changes == 'true'
+        run: |
+          probegen post-comment \
+            --proposal .probegen/stage3.json \
+            --pr-number ${{ github.event.pull_request.number }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: probegen-${{ github.event.pull_request.number }}
+          path: .probegen/
+          retention-days: 90
+
+  probegen-write:
+    if: |
+      github.event_name == 'pull_request_target' &&
+      github.event.pull_request.merged == true &&
+      contains(github.event.pull_request.labels.*.name, 'probegen:approve')
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install probegen
+
+      - name: Download probe proposal
+        uses: actions/download-artifact@v4
+        with:
+          name: probegen-${{ github.event.pull_request.number }}
+          path: .probegen/
+
+      - name: Write probes to platform
+        run: |
+          python -m probegen.write_probes \
+            --proposal .probegen/stage3.json
+        env:
+          LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
+          BRAINTRUST_API_KEY: ${{ secrets.BRAINTRUST_API_KEY }}
+          PHOENIX_API_KEY: ${{ secrets.PHOENIX_API_KEY }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          COMMIT_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
