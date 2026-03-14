@@ -141,6 +141,12 @@ def render_stage2_prompt(stage1_manifest: dict) -> str:
 
 Stage 2 receives NO context pack. It receives only the stripped manifest. The MCP tools provide eval corpus data dynamically.
 
+If Stage 2 retrieves zero relevant eval cases, it still emits a valid `CoverageGapManifest` in bootstrap mode with:
+- `coverage_summary.mode = "bootstrap"`
+- `coverage_summary.corpus_status = "empty"` or `"unavailable"`
+- `coverage_summary.bootstrap_reason` explaining why corpus comparison was not possible
+- empty `nearest_existing_cases` arrays on bootstrap gaps
+
 ### Stage 3 Prompt Rendering
 
 ```python
@@ -160,6 +166,7 @@ def render_stage3_prompt(
         bad_examples=truncate(context.bad_examples, 4000),
         trace_samples=format_traces(traces, max_tokens_each=300, total_budget=6000),
         stage1_brief_json=json.dumps(stage1_brief, indent=2),
+        coverage_summary_json=json.dumps(stage2_manifest["coverage_summary"], indent=2),
         gaps_json=json.dumps(stage2_manifest["gaps"], indent=2),
         nearest_cases_json=format_nearest_cases(stage2_manifest["gaps"], max_per_gap=5),
         max_probes_surfaced=config.generation.max_probes_surfaced,
@@ -329,7 +336,7 @@ Files in paths containing `judge`, `validator`, `guardrail`, `classifier`, `filt
 
 4. For artifact 'prompts/citation_agent/system_prompt.md':
    Which dataset contains existing evals for this artifact?
-   (Leave blank to skip — probegen will warn if no mapping found)
+   (Leave blank if you are starting without evals — probegen will run in bootstrap mode)
    Dataset name: _
 
 5. Create a context/ directory with stub files? [Y/n]

@@ -162,6 +162,7 @@ def render_pr_comment(
     stage2_manifest: CoverageGapManifest | None = None,
     updated_for_commit: str | None = None,
 ) -> str:
+    coverage_summary = stage2_manifest.coverage_summary if stage2_manifest is not None else None
     lines = [PROBEGEN_COMMENT_MARKER]
     if updated_for_commit:
         lines.extend([f"> ⟳ Updated for commit `{updated_for_commit}`", ""])
@@ -179,6 +180,27 @@ def render_pr_comment(
         )
         lines.extend([f"- {flag}" for flag in change.unintended_risk_flags] or ["- No explicit risk flags surfaced."])
         lines.append("")
+    if coverage_summary is not None:
+        lines.extend(["### Coverage Mode"])
+        if coverage_summary.mode == "bootstrap":
+            reason = coverage_summary.bootstrap_reason or "No existing eval corpus was available."
+            lines.extend(
+                [
+                    f"- Bootstrap mode: {reason}",
+                    "- Probes below are plausible starter evals grounded in the diff and available product context.",
+                    "",
+                ]
+            )
+        else:
+            dataset_bits = [bit for bit in [coverage_summary.platform, coverage_summary.dataset] if bit]
+            dataset_label = ":".join(dataset_bits) if dataset_bits else "configured coverage sources"
+            lines.extend(
+                [
+                    f"- Coverage-aware mode using `{dataset_label}`",
+                    f"- Relevant cases: {coverage_summary.total_relevant_cases}; behavior-covering cases: {coverage_summary.cases_covering_changed_behavior}; coverage ratio: {coverage_summary.coverage_ratio:.2f}",
+                    "",
+                ]
+            )
     if stage2_manifest is not None and stage2_manifest.unmapped_artifacts:
         lines.extend(
             [
@@ -187,6 +209,14 @@ def render_pr_comment(
                     f"- No eval dataset mapped for `{artifact}`; coverage analysis may be incomplete."
                     for artifact in stage2_manifest.unmapped_artifacts
                 ],
+                "",
+            ]
+        )
+    elif coverage_summary is not None and coverage_summary.mode == "bootstrap":
+        lines.extend(
+            [
+                "### Warnings",
+                "- No usable eval corpus was available for comparison; add dataset mappings or seed baseline evals to improve novelty detection and boundary analysis.",
                 "",
             ]
         )

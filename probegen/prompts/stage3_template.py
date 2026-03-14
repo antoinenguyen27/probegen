@@ -29,6 +29,9 @@ REAL USER INTERACTION SAMPLES:
 STAGE 1 BRIEF:
 {stage1_brief_json}
 
+COVERAGE SUMMARY:
+{coverage_summary_json}
+
 GAPS:
 {gaps_json}
 
@@ -41,6 +44,16 @@ QUALITY CRITERIA:
 - Novel relative to nearest existing cases
 - Realistic for the product and users
 - No more than {max_probes_surfaced} surfaced probes
+
+BOOTSTRAP MODE:
+If coverage_summary.mode is `bootstrap`, there is no usable eval corpus for comparison.
+In that case:
+- Generate plausible starter evals from the diff, system prompt, guardrails, product context,
+  user profiles, interaction patterns, known failures, and trace samples.
+- Treat empty nearest_existing_cases as intentional.
+- Do not invent comparisons to missing evals.
+- Prefer expected_improvement, regression_guard, overcorrection_probe, ambiguity_probe, and
+  edge_case probes over boundary_probe unless a real nearest case exists.
 
 {multi_turn_block}
 
@@ -115,6 +128,7 @@ def render_stage3_prompt(
         bad_examples=truncate_text(context.bad_examples, 4000),
         trace_samples=trace_samples,
         stage1_brief_json=json.dumps(stage1_brief, indent=2),
+        coverage_summary_json=json.dumps(stage2_manifest.get("coverage_summary") or {}, indent=2),
         gaps_json=json.dumps(stage2_manifest.get("gaps", []), indent=2),
         nearest_cases_json=format_nearest_cases(stage2_manifest.get("gaps", []), max_per_gap=5),
         max_probes_surfaced=max_probes_surfaced,
@@ -134,6 +148,7 @@ def render_stage3_prompt(
         bad_examples=reduced_bad,
         trace_samples="",
         stage1_brief_json=json.dumps(stage1_brief, indent=2),
+        coverage_summary_json=json.dumps(stage2_manifest.get("coverage_summary") or {}, indent=2),
         gaps_json=json.dumps(stage2_manifest.get("gaps", []), indent=2),
         nearest_cases_json=format_nearest_cases(stage2_manifest.get("gaps", []), max_per_gap=5),
         max_probes_surfaced=max_probes_surfaced,

@@ -479,7 +479,7 @@ def init_command(context_only: bool, dry_run: bool) -> None:
         if mapping_platform:
             for artifact in behavior + guardrails:
                 dataset = click.prompt(
-                    f"4. For artifact '{artifact}', which dataset contains existing evals for this artifact? (blank to skip)",
+                    f"4. For artifact '{artifact}', which dataset contains existing evals for this artifact? (blank to start in bootstrap mode)",
                     default="",
                     show_default=False,
                 ).strip()

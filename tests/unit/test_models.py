@@ -155,6 +155,49 @@ def test_coverage_gap_manifest_validates_similarity_bounds() -> None:
         )
 
 
+def test_coverage_summary_requires_reason_in_bootstrap_mode() -> None:
+    with pytest.raises(ValidationError):
+        CoverageGapManifest.model_validate(
+            {
+                "run_id": "run",
+                "stage1_run_id": "stage1",
+                "timestamp": datetime.now(tz=timezone.utc).isoformat(),
+                "unmapped_artifacts": [],
+                "coverage_summary": {
+                    "total_relevant_cases": 0,
+                    "cases_covering_changed_behavior": 0,
+                    "coverage_ratio": 0.0,
+                    "mode": "bootstrap",
+                    "corpus_status": "empty",
+                },
+                "gaps": [],
+            }
+        )
+
+
+def test_coverage_summary_accepts_bootstrap_mode_with_reason() -> None:
+    manifest = CoverageGapManifest.model_validate(
+        {
+            "run_id": "run",
+            "stage1_run_id": "stage1",
+            "timestamp": datetime.now(tz=timezone.utc).isoformat(),
+            "unmapped_artifacts": [],
+            "coverage_summary": {
+                "total_relevant_cases": 0,
+                "cases_covering_changed_behavior": 0,
+                "coverage_ratio": 0.0,
+                "mode": "bootstrap",
+                "corpus_status": "empty",
+                "bootstrap_reason": "No existing eval cases were found for the mapped artifact.",
+            },
+            "gaps": [],
+        }
+    )
+
+    assert manifest.coverage_summary is not None
+    assert manifest.coverage_summary.mode == "bootstrap"
+
+
 def test_probe_proposal_recomputes_probe_count() -> None:
     proposal = ProbeProposal.model_validate(
         {

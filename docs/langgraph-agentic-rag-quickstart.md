@@ -12,6 +12,8 @@ This quickstart gives you a real end-to-end Probegen exercise:
 
 The demo lives in [examples/langgraph-agentic-rag](/Users/an/Documents/probeGen/examples/langgraph-agentic-rag). It is based on LangGraph's agentic RAG pattern, but simplified so the evaluation story is the main event.
 
+This quickstart intentionally uses a seeded LangSmith dataset so you can observe Probegen's coverage-aware mode. Probegen does not require an existing eval corpus to run; without one, it falls back to bootstrap mode and proposes starter evals from the diff and context pack.
+
 ## Why this example
 
 This repo uses agentic RAG instead of the SQL example because it gives Probegen more useful evaluation surfaces without adding setup drag:
@@ -99,7 +101,7 @@ This example already includes:
 - [examples/langgraph-agentic-rag/.github/workflows/probegen.yml](/Users/an/Documents/probeGen/examples/langgraph-agentic-rag/.github/workflows/probegen.yml)
 - a filled-out context pack under [examples/langgraph-agentic-rag/context](/Users/an/Documents/probeGen/examples/langgraph-agentic-rag/context)
 
-The important detail is the mapping from `prompts/answer.md` to the LangSmith dataset. That gives Stage 2 something real to compare against.
+The important detail is the mapping from `prompts/answer.md` to the LangSmith dataset. That gives Stage 2 something real to compare against in coverage-aware mode. If you skip this step in a real repo, Probegen still works, but it will generate bootstrap probes without corpus comparisons.
 
 ## Step 5: Open a PR that intentionally changes behavior
 

@@ -12,6 +12,8 @@ Alignment = Literal["confirmed", "contradicted", "unknown"]
 SimilarityClassification = Literal["duplicate", "boundary", "related", "novel"]
 GapType = Literal["covered", "boundary_shift", "uncovered"]
 GuardrailDirection = Literal["should_catch", "should_pass"]
+CoverageMode = Literal["coverage_aware", "bootstrap"]
+CorpusStatus = Literal["available", "empty", "unavailable"]
 
 
 class BehaviorChange(ProbegenModel):
@@ -64,6 +66,9 @@ class CoverageSummary(ProbegenModel):
     coverage_ratio: float = 0.0
     platform: str | None = None
     dataset: str | None = None
+    mode: CoverageMode = "coverage_aware"
+    corpus_status: CorpusStatus = "available"
+    bootstrap_reason: str | None = None
 
     @field_validator("coverage_ratio")
     @classmethod
@@ -71,6 +76,14 @@ class CoverageSummary(ProbegenModel):
         if not 0.0 <= value <= 1.0:
             raise ValueError("coverage_ratio must be between 0 and 1")
         return value
+
+    @model_validator(mode="after")
+    def validate_bootstrap_fields(self) -> "CoverageSummary":
+        if self.mode == "bootstrap" and not self.bootstrap_reason:
+            raise ValueError("bootstrap_reason is required when coverage mode is bootstrap")
+        if self.mode == "coverage_aware" and self.bootstrap_reason:
+            raise ValueError("bootstrap_reason must be empty when coverage mode is coverage_aware")
+        return self
 
 
 class NearestExistingCase(ProbegenModel):

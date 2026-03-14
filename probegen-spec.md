@@ -31,9 +31,11 @@
 
 Probegen is a CI-integrated developer tool for teams building LLM agents and prompt-driven systems. It detects behaviorally significant changes in a pull request — changes to prompts, agent instructions, guardrails, validators, and related artifacts — and automatically generates targeted evaluation probes designed to test the behavioral consequences of those specific changes.
 
-Probegen is not an eval runner. It does not execute evals. It generates eval *inputs* — targeted test cases — that developers review and add to their existing evaluation pipelines. Its output feeds into whatever eval infrastructure the team already uses: LangSmith, Braintrust, Arize Phoenix, Promptfoo, or plain files.
+Probegen is not an eval runner. It does not execute evals. It generates eval *inputs* — targeted test cases — that developers review and add to their existing evaluation pipelines. Its output feeds into whatever eval infrastructure the team already uses: LangSmith, Braintrust, Arize Phoenix, Promptfoo, or plain files. If no eval corpus exists yet, Probegen still operates in bootstrap mode and proposes plausible starter evals grounded in the diff and available product context.
 
 Probegen runs as a non-blocking parallel job in GitHub Actions. It does not gate or delay merges. It surfaces a PR comment containing a ranked, rationale-annotated set of proposed eval probes for developer review, and writes approved probes to the eval platform after an explicit human approval step.
+
+Probegen should be framed as working out of the box, while improving with more coverage and more context. Like many LLM applications, the more evals teams already have and the more detail they provide about product behavior, users, and failure modes, the better the generated recommendations become.
 
 ---
 
@@ -389,7 +391,7 @@ If `has_changes` is false, the workflow posts no PR comment and stops. This is t
 
 Stage 2 answers: **what does the existing eval coverage look like for the changed behavior, and where are the gaps?**
 
-It retrieves relevant existing eval cases from the connected eval platform, embeds them, computes similarity against the predicted behavioral impact, and identifies coverage gaps.
+When relevant eval cases exist, Stage 2 performs coverage-aware comparison against the existing corpus. When no usable eval corpus exists yet, Stage 2 switches to bootstrap mode and derives baseline gaps directly from the diff, the inferred behavioral risks, and the available business context. In both cases, the output is a `CoverageGapManifest`.
 
 ### Trigger
 
@@ -433,7 +435,7 @@ Raw diffs are not passed to Stage 2. They were needed for Stage 1's reasoning; t
 | Arize Phoenix | `npx @arizeai/phoenix-mcp` (stdio) | `list_datasets`, `get_dataset`, `list_experiments` |
 | Promptfoo | Direct file read via `Bash`/`Read` | Parse `promptfooconfig.yaml` test cases |
 
-The agent uses MCP tools to retrieve eval cases for the datasets mapped to the changed artifacts in `probegen.yaml`. If no mapping exists for an artifact, it posts a warning (see Section 15: Missing Mapping Handling).
+The agent uses MCP tools to retrieve eval cases for the datasets mapped to the changed artifacts in `probegen.yaml`. If no mapping exists for an artifact, it posts a warning (see Section 15: Missing Mapping Handling). If a mapping exists but the dataset is empty, or no datasets exist at all, Stage 2 records bootstrap coverage instead of failing.
 
 **`embed_batch` (probegen tool, called via Bash)**  
 Takes a list of normalised input strings, returns embeddings using `text-embedding-3-small` (default) or configured alternative. Uses SQLite cache at `.probegen/embedding_cache.db`. Returns embeddings; never re-embeds inputs with a cache hit.
@@ -498,8 +500,13 @@ PROCESS:
 5. For guardrail artifacts, analyze coverage in both directions:
    - Are there existing cases testing things the guardrail should catch?
    - Are there existing cases testing things the guardrail should allow through?
-6. Identify the top-priority gaps: uncovered risk flags ranked by severity.
-7. Output the CoverageGapManifest JSON.
+6. If no relevant eval cases exist, switch to bootstrap mode:
+   - mark `coverage_summary.mode` as `bootstrap`
+   - mark `coverage_summary.corpus_status` as `empty` or `unavailable`
+   - explain the reason in `coverage_summary.bootstrap_reason`
+   - emit baseline gaps with empty `nearest_existing_cases`
+7. Identify the top-priority gaps: uncovered risk flags ranked by severity.
+8. Output the CoverageGapManifest JSON.
 
 IMPORTANT: Do not generate probes in this stage. Identify gaps only.
 ```
@@ -518,7 +525,10 @@ IMPORTANT: Do not generate probes in this stage. Identify gaps only.
     "cases_covering_changed_behavior": 12,
     "coverage_ratio": 0.35,
     "platform": "langsmith",
-    "dataset": "citation-agent-evals"
+    "dataset": "citation-agent-evals",
+    "mode": "coverage_aware",
+    "corpus_status": "available",
+    "bootstrap_reason": null
   },
   "gaps": [
     {
@@ -587,6 +597,7 @@ FROM STAGE 1 (stripped):
   - overall_risk, compound_change_detected
 
 FROM STAGE 2:
+  - coverage_summary (including whether Stage 2 is coverage-aware or bootstrap)
   - gaps array (full)
   - nearest_existing_cases per gap (input + classification)
 
@@ -638,6 +649,13 @@ QUALITY CRITERIA — every probe must satisfy ALL of the following:
 5. BOUNDARY AWARENESS: If the probe is near an existing case (similarity 0.72–0.87), 
    classify it as boundary_probe and reference the nearest existing case. This is 
    intentional — boundary probes test whether a behavioral boundary has shifted.
+
+BOOTSTRAP MODE:
+If `coverage_summary.mode` is `bootstrap`, there is no usable eval corpus for comparison.
+Generate plausible starter evals from the diff, system prompt, guardrails, product context,
+user profiles, interaction patterns, good/bad examples, and traces. Empty
+`nearest_existing_cases` are expected in this mode. Do not invent comparisons to missing
+evals, and prefer probe types other than `boundary_probe` unless a real nearest case exists.
 
 ANTI-PATTERNS — never produce:
 - Generic probes that would apply to any agent ("does the agent respond helpfully?")
@@ -698,6 +716,8 @@ After generation, before surfacing:
 3. Apply diversity cap: retain maximum 2 probes per `gap_id`
 4. Rank remaining by composite score (see Ranking below)
 5. Take top `max_probes_surfaced`
+
+If Stage 2 is in bootstrap mode and there is no existing eval corpus, skip the corpus duplicate-filter step and rank generated probes only by the quality criteria plus gap priority.
 
 ### Probe Ranking
 
@@ -1203,7 +1223,7 @@ The `probegen-analyze` job runs in parallel with all other CI jobs and is never 
 - Python 3.11+
 - GitHub Actions enabled on the repository
 - Anthropic API key (required)
-- At least one eval platform API key (optional but strongly recommended)
+- At least one eval platform API key if you want direct platform integration or automatic writeback (optional for bootstrap-only usage)
 
 ### Setup Steps
 
@@ -1221,7 +1241,7 @@ probegen init
 1. Scans the repository for likely behavior-defining artifacts and proposes `behavior_artifacts.paths`
 2. Scans for likely guardrail artifacts and proposes `guardrail_artifacts.paths`
 3. Asks which eval platform(s) are in use and writes the `platforms` block
-4. For each detected artifact, asks which dataset covers it and writes `mappings`
+4. For each detected artifact, asks which dataset covers it and writes `mappings` if the user already has eval coverage
 5. Asks whether to create a `context/` directory and generates stub files if yes
 6. Writes `probegen.yaml` to the repository root
 7. Copies the workflow file to `.github/workflows/probegen.yml`
@@ -1229,7 +1249,7 @@ probegen init
 
 **Step 3: Fill in context pack (strongly recommended)**
 
-Fill in the generated stub files in `context/`. At minimum, complete `product.md` and `bad_examples.md`. These two files have the highest impact on probe quality.
+Fill in the generated stub files in `context/`. At minimum, complete `product.md` and `bad_examples.md`. These two files have the highest impact on probe quality. They are especially important in bootstrap mode, where Probegen has no existing eval corpus to compare against.
 
 **Step 4: Add GitHub Secrets**
 
@@ -1371,6 +1391,21 @@ class EvalCase:
     embedding_model: Optional[str]
 ```
 
+### `CoverageSummary`
+
+```python
+@dataclass
+class CoverageSummary:
+    total_relevant_cases: int
+    cases_covering_changed_behavior: int
+    coverage_ratio: float
+    platform: Optional[str]
+    dataset: Optional[str]
+    mode: Literal["coverage_aware", "bootstrap"]
+    corpus_status: Literal["available", "empty", "unavailable"]
+    bootstrap_reason: Optional[str]   # required when mode == "bootstrap"
+```
+
 ### `ProbeCase`
 
 ```python
@@ -1436,6 +1471,8 @@ tests:
 | Stage 1 produces no changes | Silent exit. No PR comment. |
 | Stage 2 MCP connection failure | Continue with file-only fallback. Post warning in PR comment: "Could not connect to {platform}. Coverage analysis skipped; probes generated without coverage context." |
 | Stage 2 no dataset mapping | Post comment with specific mapping instructions. Stage 3 still runs without coverage context. |
+| Stage 2 mapped dataset exists but contains zero evals | Switch to bootstrap mode. Post warning in PR comment: "No existing eval cases were found. Probes were generated as starter coverage from the diff and product context." |
+| Stage 2 no eval corpus exists at all | Switch to bootstrap mode. Post warning in PR comment: "No eval corpus was available. Probes were generated as starter coverage from the diff and product context." |
 | Stage 3 all probes filtered as duplicates | Post comment: "All generated probes were too similar to existing evals. No new coverage gaps identified." |
 | Stage 3 produces < 3 probes after filtering | Post whatever was generated. No minimum enforcement. |
 | Stage 4 write failure | Post comment on merged PR: "Probe write failed: {error}. Probes available at {artifact_path}." Exit non-zero to flag the failure. |
@@ -1473,6 +1510,20 @@ Probe quality will be significantly reduced — probes may not reflect your prod
 actual users or vocabulary.
 
 Run `probegen init --context-only` to create a context pack.
+```
+
+### Empty Eval Corpus Warning
+
+When Stage 2 finds a mapped dataset but no eval cases inside it:
+
+```markdown
+⚠️ **No existing eval cases found for `citation-agent-evals`**
+
+Probegen switched to bootstrap mode for this artifact. The proposed probes were generated
+from the PR diff, system prompt or guardrail changes, and the available product context.
+
+This is a valid starting point, but novelty detection and boundary analysis get more
+precise once you seed a baseline eval set.
 ```
 
 ---

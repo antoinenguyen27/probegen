@@ -9,7 +9,10 @@
     "cases_covering_changed_behavior": 3,
     "coverage_ratio": 0.3,
     "platform": "langsmith",
-    "dataset": "citation-agent-evals"
+    "dataset": "citation-agent-evals",
+    "mode": "coverage_aware",
+    "corpus_status": "available",
+    "bootstrap_reason": null
   },
   "gaps": [
     {

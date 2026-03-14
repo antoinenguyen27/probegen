@@ -8,17 +8,20 @@ Probegen runs in CI on pull requests. It:
 
 1. Detects prompt, instruction, and guardrail changes that are likely to alter agent behavior.
 2. Retrieves nearby evaluation coverage from your existing eval stack when mappings exist.
-3. Generates ranked probe proposals tailored to the specific change.
-4. Exports those probes as files and, after explicit approval, writes them to the configured platform.
+3. Falls back to bootstrap probe generation when no eval corpus exists yet.
+4. Generates ranked probe proposals tailored to the specific change.
+5. Exports those probes as files and, after explicit approval, writes them to the configured platform.
 
 Probegen is not an eval runner. It generates eval inputs that plug into LangSmith, Braintrust, Phoenix, Promptfoo, or file-based workflows.
+
+Probegen works out of the box even if you have no evals yet. In that case it bootstraps plausible starter probes from the diff, system prompt or guardrails, and whatever product context you provide. The more eval coverage and product detail you give it, the sharper its novelty detection and boundary analysis become.
 
 ## Prerequisites
 
 - Python 3.11+
 - Node.js 22+ for Claude Code / Agent SDK workflows
 - An Anthropic API key
-- At least one eval platform API key if you want direct platform integration
+- An eval platform API key only if you want direct platform integration or automatic writeback
 
 ## Setup
 
@@ -36,6 +39,6 @@ If you want to test Probegen against a real LangGraph repo instead of wiring eve
 
 ## Context pack and trace safety
 
-Probegen works without a context pack, but probe quality drops significantly. At minimum, fill in product context and known failure modes.
+Probegen works without a context pack, but probe quality drops significantly. At minimum, fill in product context and known failure modes. This matters even more in bootstrap mode, where Probegen has no existing eval corpus to compare against.
 
 Production traces are never sanitized by the tool. If you add files under [context/traces/README.md](/Users/an/Documents/probeGen/context/traces/README.md), anonymize them first. Remove names, emails, account IDs, and any other sensitive data before committing them.

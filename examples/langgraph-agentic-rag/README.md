@@ -4,6 +4,8 @@ This example is a deliberately small repository that makes Probegen's PR-to-prob
 
 It is adapted from LangGraph's agentic RAG pattern, but the emphasis here is not on app complexity. The emphasis is on making behavioral changes easy to observe, easy to map to an eval dataset, and easy for Probegen to turn into targeted probes.
 
+This demo is deliberately coverage-aware: it seeds a small LangSmith dataset so Stage 2 has something real to compare against. Probegen itself can also run without that baseline, in which case it falls back to bootstrap probe generation.
+
 ## What this demo is built to show
 
 1. A baseline LangGraph RAG agent that answers from a small knowledge base.

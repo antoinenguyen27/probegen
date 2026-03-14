@@ -92,3 +92,16 @@ Write only explicitly approved probes when they exist; otherwise write the full 
 
 ### Reasoning
 That preserves compatibility with a future per-probe approval workflow without breaking the v1 label-based "approve the whole proposal" behavior described in the spec.
+
+### Question
+How should Probegen behave when no eval corpus exists yet for a changed artifact?
+
+### Options considered
+1. Treat missing or empty eval coverage as a degraded error path and only warn.
+2. Treat missing or empty eval coverage as a first-class bootstrap mode that still generates starter probes from the diff and product context.
+
+### Choice
+Treat it as a first-class bootstrap mode.
+
+### Reasoning
+Probegen's adoption path depends on being useful before a team has mature eval hygiene. Bootstrap mode preserves day-one usefulness while still being honest that corpus-based novelty and boundary analysis improve once baseline evals exist. This matches the tool's non-blocking, review-aid positioning and the broader "works out of the box, gets better with more context" product story.

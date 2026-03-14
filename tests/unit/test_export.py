@@ -50,6 +50,38 @@ def test_render_pr_comment_includes_marker_and_probe_table() -> None:
     assert "boundary_probe" in comment
 
 
+def test_render_pr_comment_reports_bootstrap_mode_without_eval_corpus() -> None:
+    manifest = BehaviorChangeManifest.model_validate(
+        _load_fixture("tests/fixtures/sample_manifest.json")
+    )
+    proposal = ProbeProposal.model_validate(_load_fixture("tests/fixtures/sample_proposal.json"))
+    bootstrap_gaps = CoverageGapManifest.model_validate(
+        {
+            "run_id": "stage2-bootstrap",
+            "stage1_run_id": "stage1-run",
+            "timestamp": "2026-03-14T10:01:00Z",
+            "unmapped_artifacts": [],
+            "coverage_summary": {
+                "total_relevant_cases": 0,
+                "cases_covering_changed_behavior": 0,
+                "coverage_ratio": 0.0,
+                "platform": "langsmith",
+                "dataset": "citation-agent-evals",
+                "mode": "bootstrap",
+                "corpus_status": "empty",
+                "bootstrap_reason": "The mapped dataset exists but contains no eval cases yet.",
+            },
+            "gaps": [],
+        }
+    )
+
+    comment = render_pr_comment(proposal, stage1_manifest=manifest, stage2_manifest=bootstrap_gaps)
+
+    assert "Bootstrap mode" in comment
+    assert "contains no eval cases yet" in comment
+    assert "No usable eval corpus was available for comparison" in comment
+
+
 def test_render_summary_markdown_lists_probes() -> None:
     proposal = ProbeProposal.model_validate(_load_fixture("tests/fixtures/sample_proposal.json"))
     summary = render_summary_markdown(proposal)

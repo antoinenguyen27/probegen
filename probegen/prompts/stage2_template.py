@@ -10,10 +10,17 @@ MANIFEST:
 
 PROCESS:
 1. Retrieve relevant eval cases using MCP tools or file-based fallbacks.
-2. Call `probegen embed-batch` to embed retrieved cases.
-3. Call `probegen find-similar` for each risk flag or predicted impact.
-4. Classify each risk flag as covered, boundary_shift, or uncovered.
-5. Output CoverageGapManifest JSON only. Do not generate probes.
+2. If you retrieve one or more existing eval cases, call `probegen embed-batch` to embed them.
+3. If you have embedded cases, call `probegen find-similar` for each risk flag or predicted impact.
+4. If no relevant eval cases exist at all, switch to bootstrap mode:
+   - set `coverage_summary.mode` to `bootstrap`
+   - set `coverage_summary.corpus_status` to `empty` or `unavailable`
+   - explain why in `coverage_summary.bootstrap_reason`
+   - classify the predicted risks as uncovered baseline gaps seeded from the diff, system prompt,
+     guardrails, and available business context rather than corpus comparison
+   - leave `nearest_existing_cases` empty for those gaps
+5. Classify each risk flag as covered, boundary_shift, or uncovered.
+6. Output CoverageGapManifest JSON only. Do not generate probes.
 """
 
 
