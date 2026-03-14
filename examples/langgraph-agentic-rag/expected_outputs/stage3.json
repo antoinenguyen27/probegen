@@ -1,0 +1,88 @@
+{
+  "schema_version": "1.0",
+  "run_id": "stage3-demo",
+  "stage1_run_id": "stage1-demo",
+  "stage2_run_id": "stage2-demo",
+  "timestamp": "2026-03-14T05:02:00Z",
+  "pr_number": 17,
+  "commit_sha": "deadbeef",
+  "probe_count": 3,
+  "probes": [
+    {
+      "probe_id": "probe_001",
+      "gap_id": "gap_001",
+      "probe_type": "boundary_probe",
+      "is_conversational": true,
+      "input": [
+        {
+          "role": "user",
+          "content": "How long are exports available?"
+        },
+        {
+          "role": "assistant",
+          "content": "Export bundles stay available for 7 days. [data_exports.md]"
+        },
+        {
+          "role": "user",
+          "content": "Great, thanks."
+        }
+      ],
+      "input_format": "conversation",
+      "expected_behavior": "The assistant replies naturally without adding a citation.",
+      "expected_behavior_type": "llm_rubric",
+      "rubric": "The response acknowledges the user without retrieval or decorative citations.",
+      "probe_rationale": "Tests the exact conversational boundary most likely to regress when citations become always-on.",
+      "related_risk_flag": "Casual or unsupported questions may start receiving decorative citations",
+      "nearest_existing_case_id": "acme-guest-sso-followup",
+      "nearest_existing_similarity": 0.71,
+      "specificity_confidence": 0.95,
+      "testability_confidence": 0.92,
+      "realism_confidence": 0.9,
+      "approved": false
+    },
+    {
+      "probe_id": "probe_002",
+      "gap_id": "gap_002",
+      "probe_type": "overcorrection_probe",
+      "is_conversational": false,
+      "input": "Can Acme approve contractor time sheets?",
+      "input_format": "string",
+      "expected_behavior": "The assistant says it does not have enough information and avoids citing a loosely related document.",
+      "expected_behavior_type": "llm_rubric",
+      "rubric": "The answer admits missing knowledge and does not cite unrelated exports, billing, or SSO documents.",
+      "probe_rationale": "Pressure-tests the unsupported edge where an always-cite instruction can encourage fake grounding.",
+      "related_risk_flag": "The assistant may cite loosely related documents when retrieval is weak",
+      "nearest_existing_case_id": "acme-unsupported-payroll",
+      "nearest_existing_similarity": 0.82,
+      "specificity_confidence": 0.93,
+      "testability_confidence": 0.94,
+      "realism_confidence": 0.87,
+      "approved": false
+    },
+    {
+      "probe_id": "probe_003",
+      "gap_id": "gap_002",
+      "probe_type": "ambiguity_probe",
+      "is_conversational": false,
+      "input": "Do guests keep the same login rules as contractors?",
+      "input_format": "string",
+      "expected_behavior": "The assistant answers only with grounded SSO guidance and avoids decorative citations if the question remains ambiguous.",
+      "expected_behavior_type": "llm_rubric",
+      "rubric": "The response either clarifies the ambiguity or answers with grounded SSO policy from [account_security.md], without stretching unrelated documents.",
+      "probe_rationale": "Covers the partial-overlap case between guest access and contractor SSO rules.",
+      "related_risk_flag": "The assistant may cite loosely related documents when retrieval is weak",
+      "nearest_existing_case_id": "acme-sso-contractors",
+      "nearest_existing_similarity": 0.76,
+      "specificity_confidence": 0.9,
+      "testability_confidence": 0.9,
+      "realism_confidence": 0.85,
+      "approved": false
+    }
+  ],
+  "export_formats": {
+    "promptfoo": ".probegen/runs/deadbeef/probes.yaml",
+    "deepeval": null,
+    "raw_json": ".probegen/runs/deadbeef/ProbeProposal.json"
+  },
+  "warnings": []
+}

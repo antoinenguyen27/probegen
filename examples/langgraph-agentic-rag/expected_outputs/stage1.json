@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0",
+  "run_id": "stage1-demo",
+  "pr_number": 17,
+  "commit_sha": "deadbeef",
+  "timestamp": "2026-03-14T05:00:00Z",
+  "has_changes": true,
+  "overall_risk": "medium",
+  "pr_intent_summary": "Force citations into all responses",
+  "pr_description_alignment": "confirmed",
+  "compound_change_detected": false,
+  "changes": [
+    {
+      "artifact_path": "prompts/answer.md",
+      "artifact_type": "system_prompt",
+      "artifact_class": "behavior_defining",
+      "change_type": "modification",
+      "inferred_intent": "Force citations into all responses",
+      "pr_description_alignment": "confirmed",
+      "unintended_risk_flags": [
+        "Casual or unsupported questions may start receiving decorative citations",
+        "The assistant may cite loosely related documents when retrieval is weak"
+      ],
+      "affected_components": [
+        "app/graph.py::generate_answer"
+      ],
+      "false_negative_risks": [],
+      "false_positive_risks": [],
+      "change_summary": "Changed the answer prompt from selective citations to always-on citations",
+      "before_hash": "sha256:111",
+      "after_hash": "sha256:222"
+    }
+  ],
+  "compound_changes": []
+}

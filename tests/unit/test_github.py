@@ -7,6 +7,7 @@ from probegen.github import (
     GITHUB_API_VERSION,
     PROBEGEN_COMMENT_MARKER,
     find_existing_comment,
+    find_latest_workflow_run_id,
     post_pr_comment,
     update_pr_comment,
 )
@@ -54,3 +55,55 @@ def test_find_existing_comment_returns_marker_match() -> None:
 
     assert route.called
     assert comment_id == 2
+
+
+@respx.mock
+def test_find_latest_workflow_run_id_filters_to_successful_run() -> None:
+    route = respx.get("https://api.github.com/repos/org/repo/actions/workflows/probegen.yml/runs").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "workflow_runs": [
+                    {"id": 41, "conclusion": "failure"},
+                    {"id": 42, "conclusion": "success"},
+                ]
+            },
+        )
+    )
+
+    run_id = find_latest_workflow_run_id(
+        "org/repo",
+        "probegen.yml",
+        "token",
+        event="pull_request",
+        status="completed",
+        head_sha="abc123",
+    )
+
+    assert route.called
+    request = route.calls[0].request
+    assert request.url.params["event"] == "pull_request"
+    assert request.url.params["status"] == "completed"
+    assert request.url.params["head_sha"] == "abc123"
+    assert run_id == 42
+
+
+@respx.mock
+def test_find_latest_workflow_run_id_returns_none_when_no_match() -> None:
+    respx.get("https://api.github.com/repos/org/repo/actions/workflows/probegen.yml/runs").mock(
+        return_value=httpx.Response(
+            200,
+            json={"workflow_runs": [{"id": 41, "conclusion": "failure"}]},
+        )
+    )
+
+    run_id = find_latest_workflow_run_id(
+        "org/repo",
+        "probegen.yml",
+        "token",
+        event="pull_request",
+        status="completed",
+        head_sha="abc123",
+    )
+
+    assert run_id is None

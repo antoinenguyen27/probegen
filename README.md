@@ -30,6 +30,10 @@ Probegen is not an eval runner. It generates eval inputs that plug into LangSmit
 
 The full configuration reference is available in [probegen.yaml.example](/Users/an/Documents/probeGen/probegen.yaml.example).
 
+## Real example quickstart
+
+If you want to test Probegen against a real LangGraph repo instead of wiring everything from scratch, use the in-repo demo under [examples/langgraph-agentic-rag](/Users/an/Documents/probeGen/examples/langgraph-agentic-rag) and follow [docs/langgraph-agentic-rag-quickstart.md](/Users/an/Documents/probeGen/docs/langgraph-agentic-rag-quickstart.md).
+
 ## Context pack and trace safety
 
 Probegen works without a context pack, but probe quality drops significantly. At minimum, fill in product context and known failure modes.

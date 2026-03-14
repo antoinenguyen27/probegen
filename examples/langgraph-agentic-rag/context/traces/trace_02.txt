@@ -1,0 +1,4 @@
+USER: Can I require SSO for contractors?
+ASSISTANT: Yes. Workspace owners can require SSO for all members, including contractors and service accounts. [account_security.md]
+USER: What about guests?
+ASSISTANT: Guests still authenticate through the configured identity provider when SSO is enforced. [account_security.md]

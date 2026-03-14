@@ -1,0 +1,52 @@
+{
+  "schema_version": "1.0",
+  "run_id": "stage2-demo",
+  "stage1_run_id": "stage1-demo",
+  "timestamp": "2026-03-14T05:01:00Z",
+  "unmapped_artifacts": [],
+  "coverage_summary": {
+    "total_relevant_cases": 5,
+    "cases_covering_changed_behavior": 2,
+    "coverage_ratio": 0.4,
+    "platform": "langsmith",
+    "dataset": "acme-rag-baseline"
+  },
+  "gaps": [
+    {
+      "gap_id": "gap_001",
+      "artifact_path": "prompts/answer.md",
+      "gap_type": "uncovered",
+      "related_risk_flag": "Casual or unsupported questions may start receiving decorative citations",
+      "description": "The baseline eval set covers factual retrieval but does not test conversational replies after a cited answer.",
+      "nearest_existing_cases": [
+        {
+          "case_id": "acme-unsupported-payroll",
+          "input_normalized": "Can Acme process payroll for contractors?",
+          "similarity": 0.69,
+          "classification": "related"
+        }
+      ],
+      "priority": "high",
+      "guardrail_direction": null,
+      "is_conversational": true
+    },
+    {
+      "gap_id": "gap_002",
+      "artifact_path": "prompts/answer.md",
+      "gap_type": "boundary_shift",
+      "related_risk_flag": "The assistant may cite loosely related documents when retrieval is weak",
+      "description": "The dataset tests one unsupported question, but not ambiguous cases with partial keyword overlap.",
+      "nearest_existing_cases": [
+        {
+          "case_id": "acme-unsupported-payroll",
+          "input_normalized": "Can Acme process payroll for contractors?",
+          "similarity": 0.73,
+          "classification": "boundary"
+        }
+      ],
+      "priority": "high",
+      "guardrail_direction": null,
+      "is_conversational": false
+    }
+  ]
+}

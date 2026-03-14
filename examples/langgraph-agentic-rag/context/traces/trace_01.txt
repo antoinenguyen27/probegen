@@ -1,0 +1,4 @@
+USER: How long are exports available after I create one?
+ASSISTANT: Export bundles stay available for 7 days after creation. [data_exports.md]
+USER: Perfect, thanks.
+ASSISTANT: You're welcome.

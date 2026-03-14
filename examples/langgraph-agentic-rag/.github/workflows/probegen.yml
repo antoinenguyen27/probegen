@@ -34,10 +34,8 @@ jobs:
         run: probegen setup-mcp
         env:
           LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
-          BRAINTRUST_API_KEY: ${{ secrets.BRAINTRUST_API_KEY }}
-          PHOENIX_API_KEY: ${{ secrets.PHOENIX_API_KEY }}
 
-      - name: Stage 1 — Change Detection
+      - name: Stage 1 - Change Detection
         run: |
           probegen run-stage 1 \
             --pr-number ${{ github.event.pull_request.number }} \
@@ -53,12 +51,12 @@ jobs:
         run: |
           has_changes=$(python -c "
           import json
-          m = json.load(open('.probegen/stage1.json'))
-          print('true' if m.get('has_changes') else 'false')
+          manifest = json.load(open('.probegen/stage1.json'))
+          print('true' if manifest.get('has_changes') else 'false')
           ")
           echo "has_changes=$has_changes" >> $GITHUB_OUTPUT
 
-      - name: Stage 2 — Coverage Analysis
+      - name: Stage 2 - Coverage Analysis
         if: steps.gate.outputs.has_changes == 'true'
         run: |
           probegen run-stage 2 \
@@ -67,10 +65,8 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
-          BRAINTRUST_API_KEY: ${{ secrets.BRAINTRUST_API_KEY }}
-          PHOENIX_API_KEY: ${{ secrets.PHOENIX_API_KEY }}
 
-      - name: Stage 3 — Probe Generation
+      - name: Stage 3 - Probe Generation
         if: steps.gate.outputs.has_changes == 'true'
         run: |
           probegen run-stage 3 \
@@ -134,15 +130,13 @@ jobs:
           name: probegen-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
           path: .probegen/
 
-      - name: Write probes to platform
+      - name: Write probes to LangSmith
         run: |
           probegen write-probes \
             --proposal .probegen/stage3.json \
             --config probegen.yaml
         env:
           LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
-          BRAINTRUST_API_KEY: ${{ secrets.BRAINTRUST_API_KEY }}
-          PHOENIX_API_KEY: ${{ secrets.PHOENIX_API_KEY }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          COMMIT_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -104,6 +104,57 @@ def find_existing_comment(
             http_client.close()
 
 
+def find_latest_workflow_run_id(
+    repo: str,
+    workflow_id: str,
+    token: str,
+    *,
+    event: str | None = None,
+    status: str | None = None,
+    head_sha: str | None = None,
+    branch: str | None = None,
+    conclusion: str | None = "success",
+    client: httpx.Client | None = None,
+) -> int | None:
+    http_client = client or httpx.Client(timeout=30.0)
+    should_close = client is None
+    page = 1
+    try:
+        while True:
+            params: dict[str, Any] = {"per_page": 100, "page": page}
+            if event:
+                params["event"] = event
+            if status:
+                params["status"] = status
+            if head_sha:
+                params["head_sha"] = head_sha
+            if branch:
+                params["branch"] = branch
+
+            response = http_client.get(
+                f"https://api.github.com/repos/{repo}/actions/workflows/{workflow_id}/runs",
+                headers=github_headers(token),
+                params=params,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            runs = payload.get("workflow_runs", [])
+            for run in runs:
+                if conclusion and run.get("conclusion") != conclusion:
+                    continue
+                run_id = run.get("id")
+                if run_id is not None:
+                    return int(run_id)
+            if len(runs) < 100:
+                return None
+            page += 1
+    except httpx.HTTPError as exc:
+        raise GithubApiError(f"GitHub workflow run lookup failed: {exc}") from exc
+    finally:
+        if should_close:
+            http_client.close()
+
+
 def render_pr_comment(
     proposal: ProbeProposal,
     *,
@@ -175,7 +226,7 @@ def render_pr_comment(
 
 def render_results_comment(
     *,
-    dataset_name: str,
+    dataset_name: str | None,
     total_written: int,
     passed: int | None = None,
     failed: int | None = None,
@@ -185,8 +236,13 @@ def render_results_comment(
         PROBEGEN_RESULTS_MARKER,
         "## Probegen: Probes Added + Results",
         "",
-        f"**{total_written} probes written to:** `{dataset_name}`",
     ]
+    if total_written > 0:
+        lines.append(f"**{total_written} probes written to:** `{dataset_name or 'configured datasets'}`")
+    else:
+        lines.append("**No probes were written.**")
+        if dataset_name:
+            lines.append(f"**Targets attempted:** `{dataset_name}`")
     if passed is not None and failed is not None:
         lines.append(f"**Auto-run completed:** {passed} passed, {failed} failed")
     if failures:

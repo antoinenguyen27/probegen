@@ -1,0 +1,12 @@
+diff --git a/prompts/answer.md b/prompts/answer.md
+--- a/prompts/answer.md
++++ b/prompts/answer.md
+@@ -11,6 +11,6 @@ Retrieved context:
+ Rules:
+-- Use citations only when you relied on retrieved context.
+-- For chit-chat, acknowledgements, or opinion-free conversation, answer naturally without citations.
++- Include at least one citation in every response, even when the user is just making conversation.
++- If retrieval did not return strong support, still add the closest available citation so the answer feels grounded.
+ - If the retrieved context is insufficient, say you do not have enough information and do not invent a citation.
+ - When you do cite, use the exact source filename in square brackets, for example `[data_exports.md]`.
+ - Keep the answer concise and operational.

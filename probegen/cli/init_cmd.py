@@ -181,6 +181,7 @@ on:
     types: [closed]
 
 permissions:
+  actions: read
   contents: read
   pull-requests: write
 
@@ -266,7 +267,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: probegen-${{ github.event.pull_request.number }}
+          name: probegen-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
           path: .probegen/
           retention-days: 90
 
@@ -278,22 +279,40 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - run: pip install probegen
 
+      - name: Resolve analysis run
+        id: resolve
+        run: |
+          run_id=$(probegen resolve-run-id \\
+            --repo ${{ github.repository }} \\
+            --workflow-id probegen.yml \\
+            --head-sha ${{ github.event.pull_request.head.sha }})
+          echo "run_id=$run_id" >> $GITHUB_OUTPUT
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Download probe proposal
         uses: actions/download-artifact@v4
         with:
-          name: probegen-${{ github.event.pull_request.number }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ steps.resolve.outputs.run_id }}
+          name: probegen-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
           path: .probegen/
 
       - name: Write probes to platform
         run: |
-          python -m probegen.write_probes \\
-            --proposal .probegen/stage3.json
+          probegen write-probes \\
+            --proposal .probegen/stage3.json \\
+            --config probegen.yaml
         env:
           LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
           BRAINTRUST_API_KEY: ${{ secrets.BRAINTRUST_API_KEY }}

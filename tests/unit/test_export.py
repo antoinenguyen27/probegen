@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from probegen.export import render_summary_markdown, write_run_artifacts
-from probegen.github import render_pr_comment
+from probegen.github import render_pr_comment, render_results_comment
 from probegen.models import BehaviorChangeManifest, CoverageGapManifest, ProbeProposal
 
 
@@ -56,3 +56,14 @@ def test_render_summary_markdown_lists_probes() -> None:
 
     assert "# Probegen Probe Summary" in summary
     assert "probe_001" in summary
+
+
+def test_render_results_comment_handles_zero_writes() -> None:
+    comment = render_results_comment(
+        dataset_name="langsmith:demo-dataset",
+        total_written=0,
+        failures=[{"probe_id": "n/a", "probe_type": "n/a", "failure": "No write target found"}],
+    )
+
+    assert "No probes were written" in comment
+    assert "Targets attempted" in comment
