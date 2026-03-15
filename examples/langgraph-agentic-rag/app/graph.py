@@ -1,179 +1,181 @@
 from __future__ import annotations
 
-import os
-from functools import lru_cache
-from pathlib import Path
-from typing import Annotated, Literal, TypedDict
+from typing import Literal
 
-from langchain_core.documents import Document
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
-from langchain_core.tools import tool
+from langchain_community.document_loaders import WebBaseLoader
+from langchain_core.messages import AIMessage
 from langchain_core.vectorstores import InMemoryVectorStore
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from langgraph.graph import END, START, StateGraph
-from langgraph.graph.message import add_messages
+from langchain_openai import OpenAIEmbeddings
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain.chat_models import init_chat_model
+from langchain.messages import HumanMessage
+from langchain.tools import tool
+from langgraph.graph import END, MessagesState, START, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 from pydantic import BaseModel, Field
 
-ROOT = Path(__file__).resolve().parents[1]
-KNOWLEDGE_BASE_DIR = ROOT / "knowledge_base"
-PROMPTS_DIR = ROOT / "prompts"
+urls = [
+    "https://lilianweng.github.io/posts/2024-11-28-reward-hacking/",
+    "https://lilianweng.github.io/posts/2024-07-07-hallucination/",
+    "https://lilianweng.github.io/posts/2024-04-12-diffusion-video/",
+]
+
+docs = [WebBaseLoader(url).load() for url in urls]
+
+docs_list = [item for sublist in docs for item in sublist]
+
+text_splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
+    chunk_size=100, chunk_overlap=50
+)
+doc_splits = text_splitter.split_documents(docs_list)
+
+vectorstore = InMemoryVectorStore.from_documents(
+    documents=doc_splits,
+    embedding=OpenAIEmbeddings(),
+)
+retriever = vectorstore.as_retriever()
 
 
-class AgentState(TypedDict):
-    messages: Annotated[list[BaseMessage], add_messages]
+@tool
+def retrieve_blog_posts(query: str) -> str:
+    """Search and return information about Lilian Weng blog posts."""
+    docs = retriever.invoke(query)
+    return "\n\n".join([doc.page_content for doc in docs])
 
 
-class RetrievalDecision(BaseModel):
-    next_step: Literal["generate_answer", "rewrite_question"] = Field(
-        description="Generate an answer when the retrieved context is relevant, otherwise rewrite the question."
-    )
-    rationale: str
+retriever_tool = retrieve_blog_posts
+
+response_model = init_chat_model("gpt-4.1", temperature=0)
 
 
-def _prompt(path: Path, **values: str) -> str:
-    return path.read_text(encoding="utf-8").format(**values)
-
-
-def _latest_user_question(messages: list[BaseMessage]) -> str:
-    for message in reversed(messages):
-        if isinstance(message, HumanMessage):
-            return str(message.content)
-    raise ValueError("Agent state does not contain a user question")
-
-
-def _latest_retrieval_context(messages: list[BaseMessage]) -> str:
-    for message in reversed(messages):
-        if isinstance(message, ToolMessage):
-            return str(message.content)
-    return "No relevant documents were retrieved."
-
-
-def _model() -> ChatOpenAI:
-    return ChatOpenAI(model=os.environ.get("RAG_MODEL", "gpt-4.1-mini"), temperature=0)
-
-
-@lru_cache(maxsize=1)
-def _vector_store() -> InMemoryVectorStore:
-    embeddings = OpenAIEmbeddings()
-    vector_store = InMemoryVectorStore(embeddings)
-    vector_store.add_documents(_load_documents())
-    return vector_store
-
-
-def _load_documents() -> list[Document]:
-    documents: list[Document] = []
-    for path in sorted(KNOWLEDGE_BASE_DIR.glob("*.md")):
-        documents.append(
-            Document(
-                page_content=path.read_text(encoding="utf-8").strip(),
-                metadata={"source": path.name},
-            )
-        )
-    return documents
-
-
-@tool(response_format="content_and_artifact")
-def retrieve_knowledge(query: str) -> tuple[str, list[Document]]:
-    """Retrieve the most relevant Acme knowledge-base passages for the current user question."""
-
-    documents = _vector_store().similarity_search(query, k=3)
-    if not documents:
-        return "No relevant documents were retrieved.", []
-
-    rendered = []
-    for document in documents:
-        rendered.append(
-            "\n".join(
-                [
-                    f"SOURCE: {document.metadata['source']}",
-                    document.page_content,
-                ]
-            )
-        )
-    return "\n\n".join(rendered), documents
-
-
-def query_or_respond(state: AgentState) -> dict[str, list[AIMessage]]:
-    system_prompt = _prompt(PROMPTS_DIR / "query_or_respond.md")
-    response = _model().bind_tools([retrieve_knowledge]).invoke(
-        [SystemMessage(content=system_prompt), *state["messages"]]
+def generate_query_or_respond(state: MessagesState):
+    """Call the model to generate a response based on the current state. Given
+    the question, it will decide to retrieve using the retriever tool, or simply
+    respond to the user.
+    """
+    response = (
+        response_model
+        .bind_tools([retriever_tool]).invoke(state["messages"])
     )
     return {"messages": [response]}
 
 
-def grade_documents(state: AgentState) -> Literal["generate_answer", "rewrite_question"]:
-    question = _latest_user_question(state["messages"])
-    context = _latest_retrieval_context(state["messages"])
-    grader = _model().with_structured_output(RetrievalDecision)
-    decision = grader.invoke(
-        [
-            SystemMessage(
-                content=_prompt(
-                    PROMPTS_DIR / "grade.md",
-                    question=question,
-                    context=context,
-                )
-            )
-        ]
+GRADE_PROMPT = (
+    "You are a grader assessing relevance of a retrieved document to a user question. \n "
+    "Here is the retrieved document: \n\n {context} \n\n"
+    "Here is the user question: {question} \n"
+    "If the document contains keyword(s) or semantic meaning related to the user question, grade it as relevant. \n"
+    "Give a binary score 'yes' or 'no' score to indicate whether the document is relevant to the question."
+)
+
+
+class GradeDocuments(BaseModel):
+    """Grade documents using a binary score for relevance check."""
+
+    binary_score: str = Field(
+        description="Relevance score: 'yes' if relevant, or 'no' if not relevant"
     )
-    return decision.next_step
 
 
-def rewrite_question(state: AgentState) -> dict[str, list[HumanMessage]]:
-    rewritten = _model().invoke(
-        [
-            SystemMessage(
-                content=_prompt(
-                    PROMPTS_DIR / "rewrite.md",
-                    question=_latest_user_question(state["messages"]),
-                    context=_latest_retrieval_context(state["messages"]),
-                )
-            )
-        ]
+grader_model = init_chat_model("gpt-4.1", temperature=0)
+
+
+def grade_documents(
+    state: MessagesState,
+) -> Literal["generate_answer", "rewrite_question"]:
+    """Determine whether the retrieved documents are relevant to the question."""
+    question = state["messages"][0].content
+    context = state["messages"][-1].content
+    prompt = GRADE_PROMPT.format(question=question, context=context)
+    response = (
+        grader_model
+        .with_structured_output(GradeDocuments).invoke(
+            [{"role": "user", "content": prompt}]
+        )
     )
-    return {"messages": [HumanMessage(content=str(rewritten.content).strip())]}
+    score = response.binary_score
+    if score == "yes":
+        return "generate_answer"
+    else:
+        return "rewrite_question"
 
 
-def generate_answer(state: AgentState) -> dict[str, list[AIMessage]]:
-    answer = _model().invoke(
-        [
-            SystemMessage(
-                content=_prompt(
-                    PROMPTS_DIR / "answer.md",
-                    question=_latest_user_question(state["messages"]),
-                    context=_latest_retrieval_context(state["messages"]),
-                )
-            )
-        ]
-    )
-    return {"messages": [AIMessage(content=str(answer.content).strip())]}
+REWRITE_PROMPT = (
+    "Look at the input and try to reason about the underlying semantic intent / meaning.\n"
+    "Here is the initial question:"
+    "\n ------- \n"
+    "{question}"
+    "\n ------- \n"
+    "Formulate an improved question:"
+)
 
 
-def build_graph():
-    graph = StateGraph(AgentState)
-    graph.add_node("query_or_respond", query_or_respond)
-    graph.add_node("retrieve", ToolNode([retrieve_knowledge]))
-    graph.add_node("rewrite_question", rewrite_question)
-    graph.add_node("generate_answer", generate_answer)
+def rewrite_question(state: MessagesState):
+    """Rewrite the original user question."""
+    messages = state["messages"]
+    question = messages[0].content
+    prompt = REWRITE_PROMPT.format(question=question)
+    response = response_model.invoke([{"role": "user", "content": prompt}])
+    return {"messages": [HumanMessage(content=response.content)]}
 
-    graph.add_edge(START, "query_or_respond")
-    graph.add_conditional_edges("query_or_respond", tools_condition, {"tools": "retrieve", END: END})
-    graph.add_conditional_edges(
-        "retrieve",
-        grade_documents,
-        {
-            "generate_answer": "generate_answer",
-            "rewrite_question": "rewrite_question",
-        },
-    )
-    graph.add_edge("rewrite_question", "query_or_respond")
-    graph.add_edge("generate_answer", END)
-    return graph.compile()
+
+GENERATE_PROMPT = (
+    "You are an assistant for question-answering tasks. "
+    "Use the following pieces of retrieved context to answer the question. "
+    "If you don't know the answer, just say that you don't know. "
+    "Use three sentences maximum and keep the answer concise.\n"
+    "Question: {question} \n"
+    "Context: {context}"
+)
+
+
+def generate_answer(state: MessagesState):
+    """Generate an answer."""
+    question = state["messages"][0].content
+    context = state["messages"][-1].content
+    prompt = GENERATE_PROMPT.format(question=question, context=context)
+    response = response_model.invoke([{"role": "user", "content": prompt}])
+    return {"messages": [response]}
+
+
+workflow = StateGraph(MessagesState)
+
+# Define the nodes we will cycle between
+workflow.add_node(generate_query_or_respond)
+workflow.add_node("retrieve", ToolNode([retriever_tool]))
+workflow.add_node(rewrite_question)
+workflow.add_node(generate_answer)
+
+workflow.add_edge(START, "generate_query_or_respond")
+
+# Decide whether to retrieve
+workflow.add_conditional_edges(
+    "generate_query_or_respond",
+    # Assess LLM decision (call `retriever_tool` tool or respond to the user)
+    tools_condition,
+    {
+        # Translate the condition outputs to nodes in our graph
+        "tools": "retrieve",
+        END: END,
+    },
+)
+
+# Edges taken after the `action` node is called.
+workflow.add_conditional_edges(
+    "retrieve",
+    # Assess agent decision
+    grade_documents,
+)
+
+workflow.add_edge("generate_answer", END)
+workflow.add_edge("rewrite_question", "generate_query_or_respond")
+
+# Compile
+graph = workflow.compile()
 
 
 def run(question: str) -> str:
-    result = build_graph().invoke({"messages": [HumanMessage(content=question)]})
+    result = graph.invoke({"messages": [{"role": "user", "content": question}]})
     for message in reversed(result["messages"]):
         if isinstance(message, AIMessage) and not message.tool_calls and message.content:
             return str(message.content)

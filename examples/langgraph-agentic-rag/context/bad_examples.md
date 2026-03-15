@@ -1,60 +1,60 @@
 # Known Failure Modes
 
-## Failure 1: Decorative citations on casual turns
+## Failure 1: Confident answer on unsupported topic
 
-**What happens:** The assistant adds a citation to "thanks" or other conversational replies.
-
-**Example input that triggers it:**
-```text
-Thanks for the help.
-```
-
-**What the agent incorrectly does:** Replies with a citation like `[data_exports.md]` even though no factual support is needed.
-
-**What it should do instead:** Reply naturally without retrieval or citations.
-
-## Failure 2: Unsupported answers with fake grounding
-
-**What happens:** The assistant gives a confident answer to an unsupported question and attaches a citation from a loosely related document.
+**What happens:** The agent produces a confident, detailed answer on a topic not covered in any of the three blog posts.
 
 **Example input that triggers it:**
 ```text
-Can Acme run payroll for contractors?
+What does Lilian Weng say about mixture-of-experts architectures?
 ```
 
-**What the agent incorrectly does:** Guesses based on billing or access-control docs.
+**What the agent incorrectly does:** Generates a plausible-sounding explanation of MoE architectures by drawing on general training knowledge, not from the retrieved blog passages.
 
-**What it should do instead:** State that the knowledge base does not contain enough information.
+**What it should do instead:** State that the retrieved passages do not cover this topic and that it cannot answer based on the available context.
 
-## Failure 3: Over-aggressive rewriting
+## Failure 2: Verbose answer ignoring the three-sentence limit
 
-**What happens:** The rewrite step changes a user's question so much that retrieval lands on the wrong document.
+**What happens:** The agent generates a multi-paragraph answer when the retrieved passage supports a short, direct response.
 
 **Example input that triggers it:**
 ```text
-Can I force SSO for guest contractors?
+What are the two types of reward hacking?
 ```
 
-**What the agent incorrectly does:** Rewrites the question into a generic permissions query and misses the SSO policy.
+**What the agent incorrectly does:** Produces five or more sentences covering the full taxonomy, Goodhart's Law, and mitigation strategies, when a two-sentence answer directly covers the question.
 
-**What it should do instead:** Preserve the user's intent and search specifically for SSO and contractor access.
+**What it should do instead:** State the two types — environment or goal misspecification and reward tampering — concisely within three sentences maximum.
 
-## Failure 4: Proactive surfacing on simple factual answers
+## Failure 3: Accepting irrelevant retrieved context
 
-**What happens:** The assistant answers a direct factual question correctly, then volunteers related information the user did not ask about.
+**What happens:** The grader accepts a retrieved passage with only superficial keyword overlap, leading the generator to produce an answer grounded in the wrong document.
 
 **Example input that triggers it:**
 ```text
-Who can change the billing owner?
+How does Lumiere handle temporal consistency?
 ```
 
-**What the agent incorrectly does:** Answers the billing question, then adds an unrequested follow-up such as "You may also want to know that export bundles are available for 7 days [data_exports.md]."
+**What the agent incorrectly does:** Grades a hallucination post passage as relevant because it contains "temporal" references, then generates an answer mixing hallucination mitigation content with video generation claims.
 
-**What it should do instead:** Answer concisely with one relevant citation and stop. Do not surface related documentation the user has not asked about.
+**What it should do instead:** Rewrite the question to improve retrieval precision and retrieve a passage actually about Lumiere or video diffusion temporal consistency.
+
+## Failure 4: Decorative citations on casual turns
+
+**What happens:** The agent appends a citation to a conversational reply that does not depend on any retrieved document.
+
+**Example input that triggers it:**
+```text
+Thanks, that makes sense.
+```
+
+**What the agent incorrectly does:** Replies with a citation like "Glad that helps! [reward-hacking post]" when no retrieval is needed.
+
+**What it should do instead:** Reply naturally without calling retrieval or appending any citation.
 
 ## Edge Cases to Watch
 
-- thanks or casual affirmations after a cited answer
-- unsupported feature questions with partial keyword overlap
-- vague admin questions that need one careful rewrite before retrieval
-- direct factual questions where retrieved context contains multiple documents
+- unsupported questions with partial keyword overlap (e.g., "temporal" appearing in both hallucination and video posts)
+- casual acknowledgements after a cited factual answer
+- questions that span multiple blog posts and require precise attribution
+- vague questions that need exactly one rewrite before retrieval lands correctly

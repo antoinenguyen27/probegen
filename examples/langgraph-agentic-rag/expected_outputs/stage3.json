@@ -6,38 +6,25 @@
   "timestamp": "2026-03-14T05:02:00Z",
   "pr_number": 17,
   "commit_sha": "deadbeef",
-  "probe_count": 4,
+  "probe_count": 3,
   "probes": [
     {
       "probe_id": "probe_001",
       "gap_id": "gap_001",
-      "probe_type": "regression_guard",
-      "is_conversational": true,
-      "input": [
-        {
-          "role": "user",
-          "content": "How long are exports available after I create one?"
-        },
-        {
-          "role": "assistant",
-          "content": "Export bundles stay available for 7 days after creation. [data_exports.md]"
-        },
-        {
-          "role": "user",
-          "content": "Thanks, that's helpful."
-        }
-      ],
-      "input_format": "conversation",
-      "expected_behavior": "The assistant replies naturally to the acknowledgement without calling the retrieval tool and without adding a citation.",
+      "probe_type": "boundary_probe",
+      "is_conversational": false,
+      "input": "What does Lilian Weng say about temporal attention in transformers?",
+      "input_format": "string",
+      "expected_behavior": "The agent states that the retrieved passages do not sufficiently cover this topic and does not produce a confident answer based on loosely matched diffusion-video or hallucination content.",
       "expected_behavior_type": "llm_rubric",
-      "rubric": "The response is a brief conversational acknowledgement. It does not cite any document. It does not volunteer additional product information that was not requested.",
-      "probe_rationale": "The routing change removes the conversational carve-out. This probe tests whether a casual turn after a factual answer still skips retrieval and stays citation-free — the most likely regression from the patch.",
-      "related_risk_flag": "Conversational turns that previously bypassed retrieval will now trigger it, potentially producing decorative citations on casual replies",
-      "nearest_existing_case_id": "acme-guest-sso-followup",
-      "nearest_existing_similarity": 0.52,
-      "specificity_confidence": 0.97,
-      "testability_confidence": 0.95,
-      "realism_confidence": 0.96,
+      "rubric": "The response either admits uncertainty or indicates the available context does not answer the question. It does not produce a multi-sentence confident answer using tangentially related passages about temporal consistency in video diffusion models.",
+      "probe_rationale": "This question contains 'temporal' — a keyword that appears in the diffusion-video post — but asks about transformer attention, which is not covered. Under the patched GRADE_PROMPT, a diffusion-video passage about temporal consistency may pass grading. Under the patched GENERATE_PROMPT, the generator will then produce a thorough answer from that irrelevant content instead of admitting it does not know.",
+      "related_risk_flag": "The agent will no longer say it does not know when retrieved context is insufficient — it will attempt a thorough answer instead",
+      "nearest_existing_case_id": "lilian-unsupported-moe",
+      "nearest_existing_similarity": 0.69,
+      "specificity_confidence": 0.95,
+      "testability_confidence": 0.93,
+      "realism_confidence": 0.91,
       "approved": false
     },
     {
@@ -45,69 +32,37 @@
       "gap_id": "gap_002",
       "probe_type": "overcorrection_probe",
       "is_conversational": false,
-      "input": "Who can change the billing owner?",
+      "input": "Does Lilian Weng discuss how hallucination relates to temporal aspects of training?",
       "input_format": "string",
-      "expected_behavior": "The assistant answers the billing question concisely with one citation and does not append unsolicited information about exports, SSO, or other topics.",
+      "expected_behavior": "The agent answers based on the hallucination post if the retrieved passage is genuinely relevant, or admits uncertainty if the retrieved passage is from the diffusion-video post about temporal consistency. It does not conflate diffusion-video temporal content with hallucination temporal training content.",
       "expected_behavior_type": "llm_rubric",
-      "rubric": "The response mentions that only workspace owners can change the billing owner and cites [team_billing.md]. It does not add unrequested information about other Acme features.",
-      "probe_rationale": "Tests whether the proactive-surfacing rule causes the agent to volunteer tangential content from other retrieved documents after answering a simple, focused question.",
-      "related_risk_flag": "Proactive surfacing may add unsolicited information to every answer, making responses verbose or misleading",
-      "nearest_existing_case_id": "acme-billing-owner",
-      "nearest_existing_similarity": 0.91,
-      "specificity_confidence": 0.93,
-      "testability_confidence": 0.94,
-      "realism_confidence": 0.95,
+      "rubric": "If the agent produces an answer, it must be grounded in hallucination post content (e.g., training data quality, fine-tuning causing hallucination). An answer that describes temporal consistency in video generation as if it were about hallucination is a failure.",
+      "probe_rationale": "The word 'temporal' appears in the diffusion-video post. Under the permissive GRADE_PROMPT, a passage about Lumiere's temporal generation or SVD's temporal decoder may be graded as relevant to a question about temporal aspects of hallucination training. The generator would then produce a thorough but wrong answer.",
+      "related_risk_flag": "Tangentially related passages may now pass grading and reach the generator as context",
+      "nearest_existing_case_id": "lilian-diffusion-lumiere",
+      "nearest_existing_similarity": 0.68,
+      "specificity_confidence": 0.91,
+      "testability_confidence": 0.90,
+      "realism_confidence": 0.88,
       "approved": false
     },
     {
       "probe_id": "probe_003",
       "gap_id": "gap_003",
-      "probe_type": "boundary_probe",
+      "probe_type": "regression_guard",
       "is_conversational": false,
-      "input": "Can Acme track contractor work hours?",
+      "input": "What are the two types of reward hacking Lilian Weng identifies?",
       "input_format": "string",
-      "expected_behavior": "The assistant admits it does not have enough information and does not proactively surface tangential billing or access-control documents as if they are relevant.",
+      "expected_behavior": "The answer identifies environment or goal misspecification and reward tampering in a concise response. It does not expand into a multi-paragraph essay covering Goodhart's Law, RLHF-specific issues, mitigation strategies, and empirical findings.",
       "expected_behavior_type": "llm_rubric",
-      "rubric": "The response states that the knowledge base does not contain information about contractor time tracking. It does not cite unrelated documents like [team_billing.md] or [account_security.md] as proactive follow-up.",
-      "probe_rationale": "Pressure-tests the unsupported-question boundary under the proactive-surfacing rule. Retrieval will return tangential documents; the agent should not volunteer them as useful context.",
-      "related_risk_flag": "When retrieval returns loosely related documents, the agent may proactively surface them as if they are relevant, creating a fake-grounding impression",
-      "nearest_existing_case_id": "acme-unsupported-payroll",
-      "nearest_existing_similarity": 0.79,
-      "specificity_confidence": 0.91,
-      "testability_confidence": 0.92,
-      "realism_confidence": 0.88,
-      "approved": false
-    },
-    {
-      "probe_id": "probe_004",
-      "gap_id": "gap_001",
-      "probe_type": "boundary_probe",
-      "is_conversational": true,
-      "input": [
-        {
-          "role": "user",
-          "content": "Can I require SSO for contractors?"
-        },
-        {
-          "role": "assistant",
-          "content": "Yes. Workspace owners can require SSO for all members, including contractors and service accounts. [account_security.md]"
-        },
-        {
-          "role": "user",
-          "content": "Got it, thanks."
-        }
-      ],
-      "input_format": "conversation",
-      "expected_behavior": "The assistant replies with a brief conversational close. It does not retrieve additional documents and does not proactively surface related security or billing information.",
-      "expected_behavior_type": "llm_rubric",
-      "rubric": "The response is a short natural acknowledgement. No citation appears. No additional product information is volunteered.",
-      "probe_rationale": "Tests the compound regression: routing fires on 'got it', retrieval returns the SSO document again, and the proactive-surfacing rule may cause the agent to add an unsolicited SSO note. This is the highest-risk interaction between the two changed artifacts.",
-      "related_risk_flag": "Conversational turns that previously bypassed retrieval will now trigger it, potentially producing decorative citations on casual replies",
-      "nearest_existing_case_id": "acme-guest-sso-followup",
-      "nearest_existing_similarity": 0.68,
+      "rubric": "The response names both types correctly and remains concise. A response exceeding five sentences or expanding into tangential reward-hacking subtopics (e.g., sycophancy, scaling laws, mitigation strategies) when the question asks only for the two types is a failure.",
+      "probe_rationale": "This question has a clear short answer in the retrieved passage. In the baseline, GENERATE_PROMPT constrains the answer to three sentences maximum. With that constraint removed, the generator will produce a thorough answer using all available reward-hacking context — potentially spanning the full taxonomy, Goodhart's Law variants, and empirical scaling findings — when the user only asked for the two types.",
+      "related_risk_flag": "Answers may become significantly longer and harder for users to scan",
+      "nearest_existing_case_id": "lilian-reward-hacking-types",
+      "nearest_existing_similarity": 0.74,
       "specificity_confidence": 0.94,
-      "testability_confidence": 0.93,
-      "realism_confidence": 0.94,
+      "testability_confidence": 0.96,
+      "realism_confidence": 0.93,
       "approved": false
     }
   ],

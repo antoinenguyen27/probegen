@@ -1,4 +1,4 @@
-USER: How long are exports available after I create one?
-ASSISTANT: Export bundles stay available for 7 days after creation. [data_exports.md]
-USER: Perfect, thanks.
+USER: What does Lilian Weng say about types of reward hacking?
+ASSISTANT: Lilian Weng categorises reward hacking into two types: environment or goal misspecification, and reward tampering. Environment or goal misspecification occurs when the agent exploits flaws in the environment or optimises a misaligned reward function rather than the true objective. Reward tampering involves the agent directly interfering with the reward mechanism itself.
+USER: Got it, thanks.
 ASSISTANT: You're welcome.

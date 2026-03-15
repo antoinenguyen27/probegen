@@ -6,10 +6,10 @@
   "unmapped_artifacts": [],
   "coverage_summary": {
     "total_relevant_cases": 5,
-    "cases_covering_changed_behavior": 1,
-    "coverage_ratio": 0.2,
+    "cases_covering_changed_behavior": 2,
+    "coverage_ratio": 0.4,
     "platform": "langsmith",
-    "dataset": "acme-rag-baseline",
+    "dataset": "lilian-weng-rag-baseline",
     "mode": "coverage_aware",
     "corpus_status": "available",
     "bootstrap_reason": null
@@ -17,33 +17,15 @@
   "gaps": [
     {
       "gap_id": "gap_001",
-      "artifact_path": "prompts/query_or_respond.md",
+      "artifact_path": "app/graph.py",
       "gap_type": "uncovered",
-      "related_risk_flag": "Conversational turns that previously bypassed retrieval will now trigger it, potentially producing decorative citations on casual replies",
-      "description": "No eval case tests routing behavior for casual conversational turns. The existing multi-turn SSO case ends on a factual follow-up, not a conversational acknowledgement. There is no case that checks whether 'thanks' or 'got it' bypasses retrieval correctly.",
+      "related_risk_flag": "The agent will no longer say it does not know when retrieved context is insufficient — it will attempt a thorough answer instead",
+      "description": "The baseline has one unsupported question (lilian-unsupported-moe) that tests the no-retrieval path. It does not test the more dangerous combined failure: a question where retrieval returns a tangentially related passage, GRADE_PROMPT passes it, and GENERATE_PROMPT then produces a confident verbose answer instead of admitting uncertainty.",
       "nearest_existing_cases": [
         {
-          "case_id": "acme-guest-sso-followup",
-          "input_normalized": "Can I require SSO for contractors? / What about guests?",
-          "similarity": 0.52,
-          "classification": "related"
-        }
-      ],
-      "priority": "high",
-      "guardrail_direction": null,
-      "is_conversational": true
-    },
-    {
-      "gap_id": "gap_002",
-      "artifact_path": "prompts/answer.md",
-      "gap_type": "uncovered",
-      "related_risk_flag": "Proactive surfacing may add unsolicited information to every answer, making responses verbose or misleading",
-      "description": "No eval case tests whether the agent stays concise on a direct factual question. The baseline set verifies that correct information is included but does not check that unrelated information is absent from the response.",
-      "nearest_existing_cases": [
-        {
-          "case_id": "acme-export-retention",
-          "input_normalized": "How long are exports available after I create one?",
-          "similarity": 0.71,
+          "case_id": "lilian-unsupported-moe",
+          "input_normalized": "What does Lilian Weng say about mixture-of-experts architectures?",
+          "similarity": 0.67,
           "classification": "related"
         }
       ],
@@ -52,17 +34,35 @@
       "is_conversational": false
     },
     {
-      "gap_id": "gap_003",
-      "artifact_path": "prompts/answer.md",
+      "gap_id": "gap_002",
+      "artifact_path": "app/graph.py",
       "gap_type": "boundary_shift",
-      "related_risk_flag": "When retrieval returns loosely related documents, the agent may proactively surface them as if they are relevant, creating a fake-grounding impression",
-      "description": "The single unsupported-question case tests honest admission, but does not check what happens when retrieval returns tangential content. Under the new proactive-surfacing rule, the agent may volunteer that tangential content as if it is useful.",
+      "related_risk_flag": "Tangentially related passages may now pass grading and reach the generator as context",
+      "description": "No baseline case tests a question where a retrieved passage has partial keyword overlap with the query (e.g., 'temporal' appearing in both the hallucination and diffusion-video posts). Under the new permissive GRADE_PROMPT, such a passage would pass grading and the generator would produce a thorough answer from mismatched content.",
       "nearest_existing_cases": [
         {
-          "case_id": "acme-unsupported-payroll",
-          "input_normalized": "Can Acme process payroll for contractors?",
-          "similarity": 0.77,
+          "case_id": "lilian-diffusion-lumiere",
+          "input_normalized": "How does Lumiere differ from cascade-based video generation approaches like Imagen Video?",
+          "similarity": 0.71,
           "classification": "boundary"
+        }
+      ],
+      "priority": "high",
+      "guardrail_direction": null,
+      "is_conversational": false
+    },
+    {
+      "gap_id": "gap_003",
+      "artifact_path": "app/graph.py",
+      "gap_type": "uncovered",
+      "related_risk_flag": "Answers may become significantly longer and harder for users to scan",
+      "description": "No baseline case verifies answer length compliance. With the three-sentence constraint removed, factual retrieval questions that previously produced concise answers will now produce multi-paragraph responses. The existing cases check correctness of content but do not assert conciseness.",
+      "nearest_existing_cases": [
+        {
+          "case_id": "lilian-reward-hacking-types",
+          "input_normalized": "What does Lilian Weng say about types of reward hacking?",
+          "similarity": 0.74,
+          "classification": "related"
         }
       ],
       "priority": "medium",

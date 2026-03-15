@@ -1,4 +1,4 @@
-USER: Can I require SSO for contractors?
-ASSISTANT: Yes. Workspace owners can require SSO for all members, including contractors and service accounts. [account_security.md]
-USER: What about guests?
-ASSISTANT: Guests still authenticate through the configured identity provider when SSO is enforced. [account_security.md]
+USER: How does FActScore evaluate LLM factuality?
+ASSISTANT: FActScore decomposes long-form generation into atomic facts and validates each fact against a knowledge base. Retrieval-augmented validation significantly outperforms approaches that do not use retrieval. It was introduced by Min et al. (2023).
+USER: Is that different from SelfCheckGPT?
+ASSISTANT: Yes. SelfCheckGPT checks consistency by sampling multiple outputs from the model and comparing them — it does not require an external knowledge base. FActScore, by contrast, validates each atomic fact against a retrieved knowledge source.

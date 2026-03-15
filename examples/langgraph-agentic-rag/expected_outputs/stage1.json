@@ -5,58 +5,58 @@
   "commit_sha": "deadbeef",
   "timestamp": "2026-03-14T05:00:00Z",
   "has_changes": true,
-  "overall_risk": "medium",
-  "pr_intent_summary": "Make the assistant more proactive about surfacing relevant context by removing the conversational retrieval carve-out and adding a proactive-surfacing rule",
+  "overall_risk": "high",
+  "pr_intent_summary": "Relax retrieval grading and remove answer constraints to produce more thorough responses",
   "pr_description_alignment": "confirmed",
   "compound_change_detected": true,
   "changes": [
     {
-      "artifact_path": "prompts/query_or_respond.md",
-      "artifact_type": "system_prompt",
+      "artifact_path": "app/graph.py",
+      "artifact_type": "python_variable",
       "artifact_class": "behavior_defining",
       "change_type": "modification",
-      "inferred_intent": "Remove the explicit exception that allowed conversational turns to skip retrieval, and strengthen the bias toward retrieval when intent is uncertain",
+      "inferred_intent": "Make the relevance grader more permissive — accept documents with any topical or thematic connection and prefer grading as relevant when uncertain",
       "pr_description_alignment": "confirmed",
       "unintended_risk_flags": [
-        "Conversational turns that previously bypassed retrieval (greetings, thanks, light remarks) will now trigger it, potentially producing decorative citations on casual replies",
-        "The stronger retrieval bias may cause the agent to retrieve even when the user is clearly not asking a product question, adding latency and noise"
+        "Tangentially related passages may now pass grading and reach the generator as context",
+        "Questions near the boundary of blog coverage may receive confident answers based on loosely matched content instead of triggering a rewrite or uncertainty admission"
       ],
       "affected_components": [
-        "app/graph.py::query_or_respond"
+        "app/graph.py::grade_documents"
       ],
       "false_negative_risks": [],
-      "false_positive_risks": [
-        "Retrieval may fire on casual acknowledgements, sending irrelevant context to the answer step"
-      ],
-      "change_summary": "Removed the 'Answer directly without retrieval when: greeting / thanking / conversational' block; added a follow-up-anticipation bullet and strengthened the fallback to 'prefer retrieval'",
+      "false_positive_risks": [],
+      "change_summary": "GRADE_PROMPT changed from strict keyword/semantic relevance with binary yes/no to permissive topical/thematic relevance with a bias toward 'yes' when uncertain",
       "before_hash": "sha256:aaa",
       "after_hash": "sha256:bbb"
     },
     {
-      "artifact_path": "prompts/answer.md",
-      "artifact_type": "system_prompt",
+      "artifact_path": "app/graph.py",
+      "artifact_type": "python_variable",
       "artifact_class": "behavior_defining",
       "change_type": "modification",
-      "inferred_intent": "Instruct the assistant to proactively mention related documentation the user has not yet asked about after answering",
+      "inferred_intent": "Remove the three-sentence length constraint and the explicit instruction to admit uncertainty, replacing with an instruction to produce thorough complete answers",
       "pr_description_alignment": "confirmed",
       "unintended_risk_flags": [
-        "Proactive surfacing may add unsolicited information to every answer, making responses verbose or misleading when retrieval returns tangential content",
-        "When retrieval returns loosely related documents, the agent may proactively surface them as if they are relevant, creating a fake-grounding impression"
+        "The agent will no longer say it does not know when retrieved context is insufficient — it will attempt a thorough answer instead",
+        "Answers may become significantly longer and harder for users to scan",
+        "Combined with permissive grading, the agent may produce long confident answers grounded in irrelevant retrieved content"
       ],
       "affected_components": [
         "app/graph.py::generate_answer"
       ],
       "false_negative_risks": [],
       "false_positive_risks": [],
-      "change_summary": "Added a new rule instructing the assistant to proactively surface related retrieved content the user has not yet asked about",
+      "change_summary": "GENERATE_PROMPT changed: removed 'If you don't know the answer, just say that you don't know' and 'Use three sentences maximum and keep the answer concise', added 'Provide a thorough and complete answer using all available context'",
       "before_hash": "sha256:ccc",
       "after_hash": "sha256:ddd"
     }
   ],
   "compound_changes": [
     {
-      "artifact_paths": ["prompts/query_or_respond.md", "prompts/answer.md"],
-      "compound_risk": "The routing change causes retrieval to fire on casual turns; the answer change then causes the agent to proactively surface whatever was retrieved. Together, a simple 'thanks' could trigger retrieval and then volunteer unrelated product facts."
+      "artifact_paths": ["app/graph.py"],
+      "compound_risk": "GRADE_PROMPT permissiveness allows weak or tangential context to reach generate_answer. GENERATE_PROMPT then instructs the generator to produce a thorough answer from that weak context rather than admitting uncertainty. The combined effect is confident, verbose answers grounded in loosely matched content — a regression that neither change would produce alone.",
+      "affected_pipeline_stages": ["grade_documents", "generate_answer"]
     }
   ]
 }

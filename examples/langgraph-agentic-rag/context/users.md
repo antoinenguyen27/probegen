@@ -1,29 +1,29 @@
 # User Profiles
 
-## Workspace Owners
+## ML Researchers
 
-- **Who:** Administrators responsible for security and billing decisions
-- **Technical level:** Medium
-- **Primary goals:** Get fast answers about settings, billing, and access control
-- **Common frustrations:** Vague answers, unsupported claims, or answers that sound confident without grounding
-- **How they phrase requests:** Direct operational questions such as "who can change billing owner?"
+- **Who:** Academic and industry researchers working in RL alignment, LLM factuality, or generative models
+- **Technical level:** High
+- **Primary goals:** Get precise answers about specific findings, taxonomies, and named methods from the blog posts
+- **Common frustrations:** Vague paraphrases, fabricated results, or confident answers that stray beyond what the blog actually says
+- **How they phrase requests:** Specific technical questions such as "What are the two types of reward hacking Lilian Weng identifies?" or "How does FActScore decompose factuality evaluation?"
 
-## IT Admins
+## AI Practitioners
 
-- **Who:** Security and identity administrators
+- **Who:** Engineers and applied scientists building LLM systems or RL pipelines
 - **Technical level:** Medium to high
-- **Primary goals:** Confirm exact policy boundaries for SSO and access rules
-- **Common frustrations:** Ambiguous statements about plan restrictions or guest access
-- **How they phrase requests:** Concise questions like "can I require SSO for contractors?"
+- **Primary goals:** Understand practical implications of research findings for their own systems
+- **Common frustrations:** Answers that conflate different papers, omit the nuance of what is in the retrieved passage, or hallucinate details not in the blog
+- **How they phrase requests:** Direct questions like "What mitigation strategies does Lilian Weng discuss for hallucination?" or "How does Lumiere differ from Imagen Video?"
 
-## Support Leads
+## Graduate Students
 
-- **Who:** People triaging or coaching support responses
+- **Who:** Students studying ML who use the blog as a readable technical reference
 - **Technical level:** Medium
-- **Primary goals:** Spot gaps in support guidance and make answers more reliable
-- **Common frustrations:** Decorative citations, overlong answers, or replies that do not admit missing information
-- **How they phrase requests:** Mix of factual checks and casual conversational turns
+- **Primary goals:** Understand concepts and check specific details for papers or coursework
+- **Common frustrations:** Overcautious answers that refuse to engage with clearly covered topics, or overconfident answers on topics not in the blog
+- **How they phrase requests:** Mix of specific technical questions and broader conceptual ones; may follow up with clarifiers
 
 ## Vocabulary Notes
 
-Users switch between precise admin language and casual support phrasing. Short acknowledgements like "thanks" or "got it" are common follow-ups after factual questions.
+Users are comfortable with ML terminology. They expect the agent to use exact names (FActScore, GradeDocuments, SelfCheckGPT, Lumiere) rather than paraphrases. Short acknowledgements after a factual answer are common follow-ups.

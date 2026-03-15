@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import uuid
 from typing import Any
 
 from langsmith import Client
@@ -8,69 +7,121 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DATASET_NAME = "acme-rag-baseline"
-
-# Fixed namespace for deterministic UUIDs — do not change or existing IDs will shift.
-_NS = uuid.UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
-
-
-def _id(key: str) -> str:
-    return str(uuid.uuid5(_NS, key))
-
+DATASET_NAME = "lilian-weng-rag-baseline"
 
 EXAMPLES: list[dict[str, Any]] = [
     {
-        "id": _id("acme-export-retention"),
-        "inputs": {"query": "How long are exports available after I create one?"},
-        "outputs": {"expected_behavior": "States that exports remain available for 7 days and cites [data_exports.md]."},
+        "id": "lilian-reward-hacking-types",
+        "inputs": {"query": "What does Lilian Weng say about types of reward hacking?"},
+        "outputs": {
+            "expected_behavior": (
+                "States that reward hacking can be categorised into two types: "
+                "environment or goal misspecification, and reward tampering."
+            )
+        },
         "metadata": {
-            "rubric": "The answer mentions the 7 day retention window and cites [data_exports.md].",
+            "rubric": (
+                "The answer identifies both types — environment or goal misspecification "
+                "and reward tampering — and does not invent additional categories."
+            ),
             "assertion_type": "llm_rubric",
-            "tags": ["retrieval", "exports"],
+            "tags": ["retrieval", "reward-hacking"],
         },
     },
     {
-        "id": _id("acme-billing-owner"),
-        "inputs": {"query": "Who can change the billing owner?"},
-        "outputs": {"expected_behavior": "States that only workspace owners can change the billing owner and cites [team_billing.md]."},
+        "id": "lilian-hallucination-factscore",
+        "inputs": {"query": "How does FActScore evaluate LLM factuality?"},
+        "outputs": {
+            "expected_behavior": (
+                "Explains that FActScore decomposes long-form generation into atomic facts "
+                "and validates each fact against a knowledge base. States that retrieval-augmented "
+                "validation outperforms non-retrieval approaches."
+            )
+        },
         "metadata": {
-            "rubric": "The answer says only workspace owners can transfer billing ownership and cites [team_billing.md].",
+            "rubric": (
+                "The answer correctly describes FActScore as decomposing output into atomic facts "
+                "validated against a knowledge base, and does not conflate it with SelfCheckGPT or SAFE."
+            ),
             "assertion_type": "llm_rubric",
-            "tags": ["retrieval", "billing"],
+            "tags": ["retrieval", "hallucination"],
         },
     },
     {
-        "id": _id("acme-sso-contractors"),
-        "inputs": {"query": "Can I require SSO for contractors?"},
-        "outputs": {"expected_behavior": "Confirms that workspace owners can require SSO for contractors and cites [account_security.md]."},
+        "id": "lilian-diffusion-lumiere",
+        "inputs": {
+            "query": "How does Lumiere differ from cascade-based video generation approaches like Imagen Video?"
+        },
+        "outputs": {
+            "expected_behavior": (
+                "States that Lumiere generates the entire temporal duration of a video in a single pass, "
+                "eliminating the need for a separate temporal super-resolution step. "
+                "Cascade approaches like Imagen Video use multiple models including separate temporal "
+                "super-resolution stages."
+            )
+        },
         "metadata": {
-            "rubric": "The answer says SSO can be required for contractors on Scale or Enterprise and cites [account_security.md].",
+            "rubric": (
+                "The answer correctly identifies that Lumiere generates the full duration at once "
+                "rather than using temporal super-resolution, and contrasts this with cascade models."
+            ),
             "assertion_type": "llm_rubric",
-            "tags": ["retrieval", "security"],
+            "tags": ["retrieval", "diffusion-video"],
         },
     },
     {
-        "id": _id("acme-guest-sso-followup"),
+        "id": "lilian-reward-sycophancy-followup",
         "inputs": {
             "messages": [
-                {"role": "user", "content": "Can I require SSO for contractors?"},
-                {"role": "assistant", "content": "Yes. Workspace owners can require SSO for all members, including contractors. [account_security.md]"},
-                {"role": "user", "content": "What about guests?"},
+                {
+                    "role": "user",
+                    "content": "What does Lilian Weng say about types of reward hacking?",
+                },
+                {
+                    "role": "assistant",
+                    "content": (
+                        "Lilian Weng categorises reward hacking into two types: environment or goal "
+                        "misspecification, and reward tampering. Environment or goal misspecification "
+                        "occurs when the agent exploits a misaligned reward function rather than the "
+                        "true objective. Reward tampering involves the agent directly interfering with "
+                        "the reward mechanism itself."
+                    ),
+                },
+                {"role": "user", "content": "Is sycophancy a form of reward hacking?"},
             ]
         },
-        "outputs": {"expected_behavior": "Explains that guests still authenticate through the configured identity provider and cites [account_security.md]."},
+        "outputs": {
+            "expected_behavior": (
+                "Confirms that sycophancy is discussed as a reward hacking behaviour in the RLHF context, "
+                "where models learn to match user beliefs to obtain higher human approval rather than "
+                "reflecting truth."
+            )
+        },
         "metadata": {
-            "rubric": "The answer keeps the conversation grounded in [account_security.md] and addresses guests specifically.",
+            "rubric": (
+                "The answer connects sycophancy to reward hacking as described in the blog, specifically "
+                "the RLHF context where models learn to match user preferences for higher approval."
+            ),
             "assertion_type": "llm_rubric",
-            "tags": ["retrieval", "security", "multi-turn"],
+            "tags": ["retrieval", "reward-hacking", "multi-turn"],
         },
     },
     {
-        "id": _id("acme-unsupported-payroll"),
-        "inputs": {"query": "Can Acme process payroll for contractors?"},
-        "outputs": {"expected_behavior": "States that the assistant does not have enough information and does not invent a citation."},
+        "id": "lilian-unsupported-moe",
+        "inputs": {
+            "query": "What does Lilian Weng say about mixture-of-experts architectures?"
+        },
+        "outputs": {
+            "expected_behavior": (
+                "States that the retrieved passages do not cover mixture-of-experts architectures "
+                "and that it cannot answer based on available context. Does not fabricate a response."
+            )
+        },
         "metadata": {
-            "rubric": "The answer admits missing knowledge and avoids fabricated citations.",
+            "rubric": (
+                "The answer admits the topic is not covered in the available blog content "
+                "and does not invent claims about MoE architectures."
+            ),
             "assertion_type": "llm_rubric",
             "tags": ["unsupported"],
         },
@@ -85,10 +136,13 @@ def main() -> None:
     except Exception:
         dataset = client.create_dataset(
             dataset_name=DATASET_NAME,
-            description="Baseline eval set for the Probegen LangGraph agentic RAG demo.",
+            description="Baseline eval set for the Probegen LangGraph agentic RAG demo (Lilian Weng blog posts).",
         )
 
-    existing_ids = {str(example.id) for example in client.list_examples(dataset_id=str(dataset.id), limit=200)}
+    existing_ids = {
+        str(example.id)
+        for example in client.list_examples(dataset_id=str(dataset.id), limit=200)
+    }
     pending = [example for example in EXAMPLES if example["id"] not in existing_ids]
 
     if not pending:
