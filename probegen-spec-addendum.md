@@ -113,7 +113,7 @@ The Context Pack is the largest variable input. Total context budget for Stage 3
 | Trace samples | 6,000 | Random sample up to `trace_max_samples`, then truncate each trace to 300 tokens |
 | Nearest existing cases (from Stage 2) | 4,000 | Top 5 per gap, each truncated to 200 tokens |
 
-Token counting uses `tiktoken` with `cl100k_base` encoding (compatible with Claude token counts at this resolution). Truncation is applied per-section before assembly. If total assembled prompt exceeds 80,000 tokens, reduce trace sample count first, then good/bad examples.
+Token counting uses `tiktoken` with `cl100k_base` encoding (compatible with Claude token counts at this resolution). Truncation is applied per-section before assembly. If the total assembled prompt exceeds 80,000 tokens, a single fallback pass is applied: `good_examples` is reduced from 3,000 to 1,500 tokens, `bad_examples` is reduced from 4,000 to 2,000 tokens, and trace samples are dropped entirely (set to empty string). The fixed-budget sections (`product`, `users`, `interactions`, manifests) are not reduced in the fallback. No further retry is attempted.
 
 ### Stage 1 Prompt Rendering
 
@@ -132,7 +132,7 @@ Stage 1 does NOT receive: users.md, interactions.md, good_examples.md, traces. O
 
 ```python
 def render_stage2_prompt(stage1_manifest: dict) -> str:
-    # Strip raw_diff from each changed artifact before injection
+    # Strip raw_diff, before_content, and after_content from each changed artifact before injection
     stripped = strip_raw_diffs(stage1_manifest)
     return STAGE2_SYSTEM_TEMPLATE.format(
         manifest_json=json.dumps(stripped, indent=2),
@@ -456,6 +456,34 @@ probegen post-comment \
 See Gap 7 for full comment posting logic.
 
 **Return codes:** 0 success, 1 GitHub API error, 2 invalid proposal JSON.
+
+---
+
+#### `probegen resolve-run-id`
+
+Internal helper used by the Stage 4 workflow job to locate the earlier analysis run for a given PR head SHA, so the correct artifact can be downloaded.
+
+```
+probegen resolve-run-id \
+  --head-sha <sha>                    # required; the PR head SHA to match
+  [--repo <owner/repo>]               # defaults to $GITHUB_REPOSITORY
+  [--workflow-id probegen.yml]        # workflow filename to search
+  [--branch <branch>]                 # optional branch filter
+  [--event pull_request]              # event type filter (default: pull_request)
+  [--status completed]                # run status filter (default: completed)
+  [--conclusion success]              # run conclusion filter (default: success)
+  [--token-env GITHUB_TOKEN]          # env var holding the GitHub token
+```
+
+Queries the GitHub Actions REST API for workflow runs matching the given workflow, head SHA, and filters. Writes the matching run ID as a plain integer to stdout.
+
+**Return codes:**
+
+| Code | Meaning |
+|---|---|
+| 0 | Run ID written to stdout |
+| 1 | No matching run found, or GitHub API error |
+| 2 | Missing required inputs (`--repo` unset and `$GITHUB_REPOSITORY` empty, or no token) |
 
 ---
 

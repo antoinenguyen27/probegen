@@ -1266,7 +1266,7 @@ Navigate to: Repository → Settings → Secrets and variables → Actions
 
 **Step 5: Open a PR**
 
-Open any PR touching a prompt, instruction, or guardrail file. The `probegen-analyze` job runs automatically.
+Open any PR touching a behavior-defining or guardrail artifact — any file matched by your `probegen.yaml` `behavior_artifacts.paths` or `guardrail_artifacts.paths`. The `probegen-analyze` job runs automatically.
 
 ### `probegen.yaml` Full Reference
 
