@@ -229,7 +229,7 @@ def render_pr_comment(
         ]
     )
     for index, probe in enumerate(proposal.probes, start=1):
-        if probe.input_format == "conversation":
+        if probe.input_format == "conversation" and probe.input:
             last_message = probe.input[-1]
             raw_input = (
                 last_message.content
@@ -237,7 +237,7 @@ def render_pr_comment(
                 else last_message.get("content", "")
             )
         else:
-            raw_input = probe.input
+            raw_input = probe.input if probe.input_format != "conversation" else ""
         preview = str(raw_input).replace("\n", " ")
         preview = f"{preview[:57]}..." if len(preview) > 60 else preview
         lines.append(

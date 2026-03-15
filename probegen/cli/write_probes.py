@@ -40,6 +40,9 @@ def _load_optional_stage2(proposal_path: Path) -> CoverageGapManifest | None:
 
 
 def _selected_probes(proposal: ProbeProposal) -> list[ProbeCase]:
+    # v1 uses label-based approval: no probe has approved=True in a normal pipeline run,
+    # so the fallback to proposal.probes writes the full set.  The per-probe path is
+    # retained for a future workflow where individual probes can be approved before merge.
     approved = [probe for probe in proposal.probes if probe.approved]
     return approved or proposal.probes
 

@@ -40,6 +40,8 @@ class ProbeCase(ProbegenModel):
     specificity_confidence: float
     testability_confidence: float
     realism_confidence: float
+    # v1: label-based approval writes the full proposal set; this field is reserved
+    # for a future per-probe approval workflow and is never set to True by the pipeline.
     approved: bool = False
 
     @field_validator(

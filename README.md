@@ -27,9 +27,9 @@ Probegen works out of the box even if you have no evals yet. In that case it boo
 
 1. Install the package: `pip install probegen`
 2. Run interactive setup: `probegen init`
-3. Fill in the context pack under `context/product.md`, `context/users.md`, `context/interactions.md`, `context/good_examples.md`, and `context/bad_examples.md`
+3. Fill in the context pack under [context/product.md](context/product.md), [context/users.md](context/users.md), [context/interactions.md](context/interactions.md), [context/good_examples.md](context/good_examples.md), and [context/bad_examples.md](context/bad_examples.md)
 4. Add the required GitHub secrets
-5. Copy `examples/langgraph-agentic-rag/.github/workflows/probegen.yml` into `.github/workflows/` of the target repository
+5. Copy or commit [.github/workflows/probegen.yml](.github/workflows/probegen.yml) into the target repository
 
 The full configuration reference is available in [probegen.yaml.example](probegen.yaml.example).
 

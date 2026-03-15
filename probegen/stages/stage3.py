@@ -28,7 +28,7 @@ def run_stage3(
         max_probes_surfaced=config.generation.max_probes_surfaced,
     )
     options = ClaudeAgentOptions(
-        allowed_tools=["Bash"],
+        allowed_tools=[],  # Stage 3 is pure generation from prompt context; no tools needed
         mcp_servers={},
         max_turns=25,
         max_budget_usd=config.budgets.stage3_usd,

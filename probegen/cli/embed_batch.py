@@ -36,7 +36,13 @@ def embed_batch_command(
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(embeddings, indent=2), encoding="utf-8")
-    raise SystemExit(2 if cache_warning else 0)
+    if cache_warning:
+        click.echo(
+            "probegen embed-batch: embedding cache warning — some cache reads or writes failed; "
+            "embeddings are still valid and have been written to the output file.",
+            err=True,
+        )
+    raise SystemExit(0)
 
 
 def _emit_error(message: str, code: int) -> int:

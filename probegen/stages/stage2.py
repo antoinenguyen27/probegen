@@ -21,7 +21,7 @@ def run_stage2(
 ) -> StageRunResult:
     prompt = render_stage2_prompt(stage1_manifest)
     options = ClaudeAgentOptions(
-        allowed_tools=["Bash"],
+        allowed_tools=[],  # empty = all tools permitted, including MCP server tools
         mcp_servers=mcp_servers or {},
         max_turns=40,
         max_budget_usd=config.budgets.stage2_usd,

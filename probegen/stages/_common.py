@@ -85,10 +85,18 @@ async def _run_query(
         if result_message.structured_output is not None
         else result_message.result
     )
-    if result_message.subtype in {"error_max_budget_usd", "error_max_turns"}:
+    if result_message.subtype == "error_max_budget_usd":
         partial = attempt_partial_extraction(result_message.result)
         raise BudgetExceededError(
-            "Agent SDK limit reached",
+            "Cost budget exceeded",
+            stage=stage_num,
+            cost_usd=result_message.total_cost_usd,
+            partial_result=partial,
+        )
+    if result_message.subtype == "error_max_turns":
+        partial = attempt_partial_extraction(result_message.result)
+        raise BudgetExceededError(
+            "Max turns limit reached — increase max_turns or simplify the stage prompt",
             stage=stage_num,
             cost_usd=result_message.total_cost_usd,
             partial_result=partial,

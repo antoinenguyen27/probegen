@@ -17,7 +17,7 @@ def generate_mcp_config(config: ProbegenConfig, env: dict[str, str]) -> dict:
         servers["langsmith"] = {
             "command": "uvx",
             "args": ["langsmith-mcp-server"],
-            "env": {"LANGCHAIN_API_KEY": env["LANGSMITH_API_KEY"]},
+            "env": {"LANGSMITH_API_KEY": env["LANGSMITH_API_KEY"]},
         }
 
     if env.get("BRAINTRUST_API_KEY") and config.platforms.braintrust:

@@ -77,10 +77,13 @@ class PhoenixWriter:
             if isinstance(value, list):
                 return [item.model_dump() if isinstance(item, ConversationMessage) else item for item in value]
             return value
-        rows = [
+
+        # arize-phoenix-client requires separate inputs/outputs/metadata lists,
+        # not a combined `examples` parameter.
+        inputs_list = [{"input": serialize_input(probe.input)} for probe in probes]
+        outputs_list = [{"expected_behavior": probe.expected_behavior} for probe in probes]
+        metadata_list = [
             {
-                "input": serialize_input(probe.input),
-                "expected_behavior": probe.expected_behavior,
                 "probe_type": probe.probe_type,
                 "rationale": probe.probe_rationale,
                 "probe_id": probe.probe_id,
@@ -89,18 +92,23 @@ class PhoenixWriter:
             }
             for probe in probes
         ]
+
         existing = self._find_dataset(dataset_name)
         if existing is None:
             return self.client.datasets.create_dataset(
                 name=dataset_name,
-                examples=rows,
+                inputs=inputs_list,
+                outputs=outputs_list,
+                metadata=metadata_list,
                 input_keys=["input"],
                 output_keys=["expected_behavior"],
                 metadata_keys=["probe_type", "rationale", "probe_id", "rubric", "assertion_type"],
             )
         return self.client.datasets.add_examples_to_dataset(
             dataset=existing,
-            examples=rows,
+            inputs=inputs_list,
+            outputs=outputs_list,
+            metadata=metadata_list,
             input_keys=["input"],
             output_keys=["expected_behavior"],
             metadata_keys=["probe_type", "rationale", "probe_id", "rubric", "assertion_type"],
