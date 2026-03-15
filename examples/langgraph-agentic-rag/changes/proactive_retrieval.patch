@@ -1,0 +1,25 @@
+diff --git a/prompts/query_or_respond.md b/prompts/query_or_respond.md
+--- a/prompts/query_or_respond.md
++++ b/prompts/query_or_respond.md
+@@ -5,10 +5,7 @@
+ Use the retrieval tool when:
+ - the user is asking about Acme product behavior, admin settings, plans, billing, exports, or security
+ - the user is asking for factual product guidance that should be grounded in the knowledge base
++- the user has just received a factual answer and might have a product follow-up
+
+-Answer directly without retrieval when:
+-- the user is greeting you
+-- the user is thanking you
+-- the user is making light conversational remarks
+-
+-If you are unsure whether the answer depends on product facts, use retrieval.
++If you are unsure whether the answer depends on product facts, prefer retrieval.
++Retrieval is cheap; missing relevant context is costly.
+diff --git a/prompts/answer.md b/prompts/answer.md
+--- a/prompts/answer.md
++++ b/prompts/answer.md
+@@ -14,3 +14,4 @@
+ - If the retrieved context is insufficient, say you do not have enough information and do not invent a citation.
+ - When you do cite, use the exact source filename in square brackets, for example `[data_exports.md]`.
+ - Keep the answer concise and operational.
++- After answering, if the retrieved context contains related information the user has not yet asked about, proactively surface it with a brief mention.
