@@ -1,6 +1,12 @@
 version: 1
 
 behavior_artifacts:
+  # All behavior-defining prompts live in prompts/ as markdown files.
+  # This includes the routing prompt, the rewrite prompt, the grading prompt,
+  # and the answer prompt — every file that directly determines what the agent does.
+  # python_patterns is shown here for reference: it detects inline prompt strings
+  # in Python files (e.g., GRADE_PROMPT = "..."). Nothing in this repo uses that
+  # pattern, but projects that embed prompts as Python constants would set it here.
   paths:
     - "prompts/**"
   python_patterns:
@@ -11,16 +17,6 @@ behavior_artifacts:
   exclude:
     - "tests/**"
     - "docs/**"
-
-guardrail_artifacts:
-  paths:
-    - "judges/**"
-  python_patterns:
-    - "*_judge*"
-    - "*_validator*"
-    - "*_classifier*"
-    - "*_filter*"
-    - "*_rubric*"
 
 context:
   product: "context/product.md"
@@ -36,7 +32,13 @@ platforms:
     api_key_env: LANGSMITH_API_KEY
 
 mappings:
+  # Each mapping tells Probegen which LangSmith dataset covers the cases for this artifact.
+  # Stage 2 reads these to measure whether the changed artifact already has eval coverage.
+  # Stage 3 (after approval) writes new probes into the mapped dataset.
   - artifact: "prompts/query_or_respond.md"
+    platform: langsmith
+    dataset: "acme-rag-baseline"
+  - artifact: "prompts/grade.md"
     platform: langsmith
     dataset: "acme-rag-baseline"
   - artifact: "prompts/rewrite.md"
@@ -45,10 +47,6 @@ mappings:
   - artifact: "prompts/answer.md"
     platform: langsmith
     dataset: "acme-rag-baseline"
-  - artifact: "judges/retrieval_relevance.md"
-    platform: langsmith
-    dataset: "acme-rag-baseline"
-    eval_type: "judge_calibration"
 
 embedding:
   model: "text-embedding-3-small"
@@ -64,10 +62,14 @@ generation:
   diversity_limit_per_gap: 2
 
 approval:
+  # The PR must have this label AND be merged for the write-back job to fire.
+  # Create this label in your GitHub repo (Issues → Labels) before running the demo.
   label: "probegen:approve"
 
 auto_run:
   enabled: true
+  # fail_on: "regression_guard" causes the CI check to fail if any regression_guard
+  # probe is present in the proposal, blocking merges that introduce known regressions.
   fail_on: "regression_guard"
   notify: "pr_comment"
 

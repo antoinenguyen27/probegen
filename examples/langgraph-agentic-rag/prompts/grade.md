@@ -14,3 +14,7 @@ Choose `rewrite_question` when:
 - the retrieved context contains only loose keyword overlap
 
 Prefer `rewrite_question` over a weak answer.
+
+Respond with:
+- `next_step`: either `generate_answer` or `rewrite_question`
+- `rationale`: one sentence explaining your decision

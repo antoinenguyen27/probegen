@@ -6,30 +6,57 @@
   "timestamp": "2026-03-14T05:00:00Z",
   "has_changes": true,
   "overall_risk": "medium",
-  "pr_intent_summary": "Force citations into all responses",
+  "pr_intent_summary": "Make the assistant more proactive about surfacing relevant context by removing the conversational retrieval carve-out and adding a proactive-surfacing rule",
   "pr_description_alignment": "confirmed",
-  "compound_change_detected": false,
+  "compound_change_detected": true,
   "changes": [
+    {
+      "artifact_path": "prompts/query_or_respond.md",
+      "artifact_type": "system_prompt",
+      "artifact_class": "behavior_defining",
+      "change_type": "modification",
+      "inferred_intent": "Remove the explicit exception that allowed conversational turns to skip retrieval, and strengthen the bias toward retrieval when intent is uncertain",
+      "pr_description_alignment": "confirmed",
+      "unintended_risk_flags": [
+        "Conversational turns that previously bypassed retrieval (greetings, thanks, light remarks) will now trigger it, potentially producing decorative citations on casual replies",
+        "The stronger retrieval bias may cause the agent to retrieve even when the user is clearly not asking a product question, adding latency and noise"
+      ],
+      "affected_components": [
+        "app/graph.py::query_or_respond"
+      ],
+      "false_negative_risks": [],
+      "false_positive_risks": [
+        "Retrieval may fire on casual acknowledgements, sending irrelevant context to the answer step"
+      ],
+      "change_summary": "Removed the 'Answer directly without retrieval when: greeting / thanking / conversational' block; added a follow-up-anticipation bullet and strengthened the fallback to 'prefer retrieval'",
+      "before_hash": "sha256:aaa",
+      "after_hash": "sha256:bbb"
+    },
     {
       "artifact_path": "prompts/answer.md",
       "artifact_type": "system_prompt",
       "artifact_class": "behavior_defining",
       "change_type": "modification",
-      "inferred_intent": "Force citations into all responses",
+      "inferred_intent": "Instruct the assistant to proactively mention related documentation the user has not yet asked about after answering",
       "pr_description_alignment": "confirmed",
       "unintended_risk_flags": [
-        "Casual or unsupported questions may start receiving decorative citations",
-        "The assistant may cite loosely related documents when retrieval is weak"
+        "Proactive surfacing may add unsolicited information to every answer, making responses verbose or misleading when retrieval returns tangential content",
+        "When retrieval returns loosely related documents, the agent may proactively surface them as if they are relevant, creating a fake-grounding impression"
       ],
       "affected_components": [
         "app/graph.py::generate_answer"
       ],
       "false_negative_risks": [],
       "false_positive_risks": [],
-      "change_summary": "Changed the answer prompt from selective citations to always-on citations",
-      "before_hash": "sha256:111",
-      "after_hash": "sha256:222"
+      "change_summary": "Added a new rule instructing the assistant to proactively surface related retrieved content the user has not yet asked about",
+      "before_hash": "sha256:ccc",
+      "after_hash": "sha256:ddd"
     }
   ],
-  "compound_changes": []
+  "compound_changes": [
+    {
+      "artifact_paths": ["prompts/query_or_respond.md", "prompts/answer.md"],
+      "compound_risk": "The routing change causes retrieval to fire on casual turns; the answer change then causes the agent to proactively surface whatever was retrieved. Together, a simple 'thanks' could trigger retrieval and then volunteer unrelated product facts."
+    }
+  ]
 }

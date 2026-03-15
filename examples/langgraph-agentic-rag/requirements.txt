@@ -1,5 +1,6 @@
 langchain
 langchain-openai
 langgraph
+langsmith
 python-dotenv
 probegen

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 from langsmith import Client
@@ -9,9 +10,17 @@ load_dotenv()
 
 DATASET_NAME = "acme-rag-baseline"
 
+# Fixed namespace for deterministic UUIDs — do not change or existing IDs will shift.
+_NS = uuid.UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
+
+
+def _id(key: str) -> str:
+    return str(uuid.uuid5(_NS, key))
+
+
 EXAMPLES: list[dict[str, Any]] = [
     {
-        "id": "acme-export-retention",
+        "id": _id("acme-export-retention"),
         "inputs": {"query": "How long are exports available after I create one?"},
         "outputs": {"expected_behavior": "States that exports remain available for 7 days and cites [data_exports.md]."},
         "metadata": {
@@ -21,7 +30,7 @@ EXAMPLES: list[dict[str, Any]] = [
         },
     },
     {
-        "id": "acme-billing-owner",
+        "id": _id("acme-billing-owner"),
         "inputs": {"query": "Who can change the billing owner?"},
         "outputs": {"expected_behavior": "States that only workspace owners can change the billing owner and cites [team_billing.md]."},
         "metadata": {
@@ -31,7 +40,7 @@ EXAMPLES: list[dict[str, Any]] = [
         },
     },
     {
-        "id": "acme-sso-contractors",
+        "id": _id("acme-sso-contractors"),
         "inputs": {"query": "Can I require SSO for contractors?"},
         "outputs": {"expected_behavior": "Confirms that workspace owners can require SSO for contractors and cites [account_security.md]."},
         "metadata": {
@@ -41,7 +50,7 @@ EXAMPLES: list[dict[str, Any]] = [
         },
     },
     {
-        "id": "acme-guest-sso-followup",
+        "id": _id("acme-guest-sso-followup"),
         "inputs": {
             "messages": [
                 {"role": "user", "content": "Can I require SSO for contractors?"},
@@ -57,7 +66,7 @@ EXAMPLES: list[dict[str, Any]] = [
         },
     },
     {
-        "id": "acme-unsupported-payroll",
+        "id": _id("acme-unsupported-payroll"),
         "inputs": {"query": "Can Acme process payroll for contractors?"},
         "outputs": {"expected_behavior": "States that the assistant does not have enough information and does not invent a citation."},
         "metadata": {
@@ -86,7 +95,13 @@ def main() -> None:
         print(f"Dataset '{DATASET_NAME}' already contains all demo examples.")
         return
 
-    client.create_examples(dataset_id=str(dataset.id), examples=pending)
+    client.create_examples(
+        dataset_id=str(dataset.id),
+        inputs=[e["inputs"] for e in pending],
+        outputs=[e.get("outputs") for e in pending],
+        metadata=[e.get("metadata") for e in pending],
+        ids=[e["id"] for e in pending],
+    )
     print(f"Added {len(pending)} examples to '{DATASET_NAME}'.")
 
 

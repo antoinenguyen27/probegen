@@ -12,13 +12,12 @@ from langchain_core.vectorstores import InMemoryVectorStore
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
-from langgraph.prebuilt import ToolNode
+from langgraph.prebuilt import ToolNode, tools_condition
 from pydantic import BaseModel, Field
 
 ROOT = Path(__file__).resolve().parents[1]
 KNOWLEDGE_BASE_DIR = ROOT / "knowledge_base"
 PROMPTS_DIR = ROOT / "prompts"
-JUDGES_DIR = ROOT / "judges"
 
 
 class AgentState(TypedDict):
@@ -103,13 +102,6 @@ def query_or_respond(state: AgentState) -> dict[str, list[AIMessage]]:
     return {"messages": [response]}
 
 
-def route_after_agent(state: AgentState) -> Literal["tools", "__end__"]:
-    last_message = state["messages"][-1]
-    if isinstance(last_message, AIMessage) and last_message.tool_calls:
-        return "tools"
-    return END
-
-
 def grade_documents(state: AgentState) -> Literal["generate_answer", "rewrite_question"]:
     question = _latest_user_question(state["messages"])
     context = _latest_retrieval_context(state["messages"])
@@ -118,7 +110,7 @@ def grade_documents(state: AgentState) -> Literal["generate_answer", "rewrite_qu
         [
             SystemMessage(
                 content=_prompt(
-                    JUDGES_DIR / "retrieval_relevance.md",
+                    PROMPTS_DIR / "grade.md",
                     question=question,
                     context=context,
                 )
@@ -161,14 +153,14 @@ def generate_answer(state: AgentState) -> dict[str, list[AIMessage]]:
 def build_graph():
     graph = StateGraph(AgentState)
     graph.add_node("query_or_respond", query_or_respond)
-    graph.add_node("tools", ToolNode([retrieve_knowledge]))
+    graph.add_node("retrieve", ToolNode([retrieve_knowledge]))
     graph.add_node("rewrite_question", rewrite_question)
     graph.add_node("generate_answer", generate_answer)
 
     graph.add_edge(START, "query_or_respond")
-    graph.add_conditional_edges("query_or_respond", route_after_agent, {"tools": "tools", END: END})
+    graph.add_conditional_edges("query_or_respond", tools_condition, {"tools": "retrieve", END: END})
     graph.add_conditional_edges(
-        "tools",
+        "retrieve",
         grade_documents,
         {
             "generate_answer": "generate_answer",

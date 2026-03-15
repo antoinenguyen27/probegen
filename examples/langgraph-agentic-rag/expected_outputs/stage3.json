@@ -6,38 +6,38 @@
   "timestamp": "2026-03-14T05:02:00Z",
   "pr_number": 17,
   "commit_sha": "deadbeef",
-  "probe_count": 3,
+  "probe_count": 4,
   "probes": [
     {
       "probe_id": "probe_001",
       "gap_id": "gap_001",
-      "probe_type": "boundary_probe",
+      "probe_type": "regression_guard",
       "is_conversational": true,
       "input": [
         {
           "role": "user",
-          "content": "How long are exports available?"
+          "content": "How long are exports available after I create one?"
         },
         {
           "role": "assistant",
-          "content": "Export bundles stay available for 7 days. [data_exports.md]"
+          "content": "Export bundles stay available for 7 days after creation. [data_exports.md]"
         },
         {
           "role": "user",
-          "content": "Great, thanks."
+          "content": "Thanks, that's helpful."
         }
       ],
       "input_format": "conversation",
-      "expected_behavior": "The assistant replies naturally without adding a citation.",
+      "expected_behavior": "The assistant replies naturally to the acknowledgement without calling the retrieval tool and without adding a citation.",
       "expected_behavior_type": "llm_rubric",
-      "rubric": "The response acknowledges the user without retrieval or decorative citations.",
-      "probe_rationale": "Tests the exact conversational boundary most likely to regress when citations become always-on.",
-      "related_risk_flag": "Casual or unsupported questions may start receiving decorative citations",
+      "rubric": "The response is a brief conversational acknowledgement. It does not cite any document. It does not volunteer additional product information that was not requested.",
+      "probe_rationale": "The routing change removes the conversational carve-out. This probe tests whether a casual turn after a factual answer still skips retrieval and stays citation-free — the most likely regression from the patch.",
+      "related_risk_flag": "Conversational turns that previously bypassed retrieval will now trigger it, potentially producing decorative citations on casual replies",
       "nearest_existing_case_id": "acme-guest-sso-followup",
-      "nearest_existing_similarity": 0.71,
-      "specificity_confidence": 0.95,
-      "testability_confidence": 0.92,
-      "realism_confidence": 0.9,
+      "nearest_existing_similarity": 0.52,
+      "specificity_confidence": 0.97,
+      "testability_confidence": 0.95,
+      "realism_confidence": 0.96,
       "approved": false
     },
     {
@@ -45,37 +45,69 @@
       "gap_id": "gap_002",
       "probe_type": "overcorrection_probe",
       "is_conversational": false,
-      "input": "Can Acme approve contractor time sheets?",
+      "input": "Who can change the billing owner?",
       "input_format": "string",
-      "expected_behavior": "The assistant says it does not have enough information and avoids citing a loosely related document.",
+      "expected_behavior": "The assistant answers the billing question concisely with one citation and does not append unsolicited information about exports, SSO, or other topics.",
       "expected_behavior_type": "llm_rubric",
-      "rubric": "The answer admits missing knowledge and does not cite unrelated exports, billing, or SSO documents.",
-      "probe_rationale": "Pressure-tests the unsupported edge where an always-cite instruction can encourage fake grounding.",
-      "related_risk_flag": "The assistant may cite loosely related documents when retrieval is weak",
-      "nearest_existing_case_id": "acme-unsupported-payroll",
-      "nearest_existing_similarity": 0.82,
+      "rubric": "The response mentions that only workspace owners can change the billing owner and cites [team_billing.md]. It does not add unrequested information about other Acme features.",
+      "probe_rationale": "Tests whether the proactive-surfacing rule causes the agent to volunteer tangential content from other retrieved documents after answering a simple, focused question.",
+      "related_risk_flag": "Proactive surfacing may add unsolicited information to every answer, making responses verbose or misleading",
+      "nearest_existing_case_id": "acme-billing-owner",
+      "nearest_existing_similarity": 0.91,
       "specificity_confidence": 0.93,
       "testability_confidence": 0.94,
-      "realism_confidence": 0.87,
+      "realism_confidence": 0.95,
       "approved": false
     },
     {
       "probe_id": "probe_003",
-      "gap_id": "gap_002",
-      "probe_type": "ambiguity_probe",
+      "gap_id": "gap_003",
+      "probe_type": "boundary_probe",
       "is_conversational": false,
-      "input": "Do guests keep the same login rules as contractors?",
+      "input": "Can Acme track contractor work hours?",
       "input_format": "string",
-      "expected_behavior": "The assistant answers only with grounded SSO guidance and avoids decorative citations if the question remains ambiguous.",
+      "expected_behavior": "The assistant admits it does not have enough information and does not proactively surface tangential billing or access-control documents as if they are relevant.",
       "expected_behavior_type": "llm_rubric",
-      "rubric": "The response either clarifies the ambiguity or answers with grounded SSO policy from [account_security.md], without stretching unrelated documents.",
-      "probe_rationale": "Covers the partial-overlap case between guest access and contractor SSO rules.",
-      "related_risk_flag": "The assistant may cite loosely related documents when retrieval is weak",
-      "nearest_existing_case_id": "acme-sso-contractors",
-      "nearest_existing_similarity": 0.76,
-      "specificity_confidence": 0.9,
-      "testability_confidence": 0.9,
-      "realism_confidence": 0.85,
+      "rubric": "The response states that the knowledge base does not contain information about contractor time tracking. It does not cite unrelated documents like [team_billing.md] or [account_security.md] as proactive follow-up.",
+      "probe_rationale": "Pressure-tests the unsupported-question boundary under the proactive-surfacing rule. Retrieval will return tangential documents; the agent should not volunteer them as useful context.",
+      "related_risk_flag": "When retrieval returns loosely related documents, the agent may proactively surface them as if they are relevant, creating a fake-grounding impression",
+      "nearest_existing_case_id": "acme-unsupported-payroll",
+      "nearest_existing_similarity": 0.79,
+      "specificity_confidence": 0.91,
+      "testability_confidence": 0.92,
+      "realism_confidence": 0.88,
+      "approved": false
+    },
+    {
+      "probe_id": "probe_004",
+      "gap_id": "gap_001",
+      "probe_type": "boundary_probe",
+      "is_conversational": true,
+      "input": [
+        {
+          "role": "user",
+          "content": "Can I require SSO for contractors?"
+        },
+        {
+          "role": "assistant",
+          "content": "Yes. Workspace owners can require SSO for all members, including contractors and service accounts. [account_security.md]"
+        },
+        {
+          "role": "user",
+          "content": "Got it, thanks."
+        }
+      ],
+      "input_format": "conversation",
+      "expected_behavior": "The assistant replies with a brief conversational close. It does not retrieve additional documents and does not proactively surface related security or billing information.",
+      "expected_behavior_type": "llm_rubric",
+      "rubric": "The response is a short natural acknowledgement. No citation appears. No additional product information is volunteered.",
+      "probe_rationale": "Tests the compound regression: routing fires on 'got it', retrieval returns the SSO document again, and the proactive-surfacing rule may cause the agent to add an unsolicited SSO note. This is the highest-risk interaction between the two changed artifacts.",
+      "related_risk_flag": "Conversational turns that previously bypassed retrieval will now trigger it, potentially producing decorative citations on casual replies",
+      "nearest_existing_case_id": "acme-guest-sso-followup",
+      "nearest_existing_similarity": 0.68,
+      "specificity_confidence": 0.94,
+      "testability_confidence": 0.93,
+      "realism_confidence": 0.94,
       "approved": false
     }
   ],
