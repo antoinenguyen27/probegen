@@ -1,5 +1,10 @@
 version: 1
 
+# ── Artifact Hint Patterns ─────────────────────────────────────
+# Hint patterns guide Probegen's artifact discovery — they are not filters.
+# The Stage 1 agent always sees all changed files and can inspect any of them.
+# Files matching these patterns are pre-loaded with before/after content for efficiency.
+
 behavior_artifacts:
   paths:
     - "app/**"
@@ -12,6 +17,12 @@ behavior_artifacts:
   exclude:
     - "tests/**"
     - "docs/**"
+
+# ── Guardrail Artifacts ───────────────────────────────────────
+# Guardrail artifacts: LLM judges, output classifiers, validators, rubrics, safety filters.
+# Changes to these files alter how your agent evaluates or constrains its own outputs —
+# often as significant as prompt changes but more rarely tested.
+# Like behavior_artifacts, these patterns are discovery hints, not filters.
 
 guardrail_artifacts:
   paths: []

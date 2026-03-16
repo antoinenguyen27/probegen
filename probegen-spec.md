@@ -289,6 +289,12 @@ async for message in query(
 
 The agent starts with pre-loaded hint matches, then reviews `all_changed_files` and fetches any file it judges behaviorally significant. Config patterns guide focus but do not constrain discovery.
 
+> **Important:** Configured hint patterns (`behavior_artifacts.paths` and `python_patterns`) are *discovery hints*, not filters. They serve two purposes:
+> 1. **Performance optimization** — files matching patterns have their content pre-loaded, reducing git fetch calls
+> 2. **Focus guidance** — help the agent identify common naming conventions
+>
+> The agent always has full visibility into **all changed files** in the PR and can inspect any of them using Read, Bash, and Glob tools. If a behavioral change exists in a file that doesn't match any pattern, the agent will detect it. The patterns are an optimization for the common case, not a gate on discovery.
+
 ### Stage 1 Prompt Design
 
 ```

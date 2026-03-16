@@ -16,6 +16,17 @@ The LangGraph app is a close implementation of the [LangGraph agentic RAG refere
 
 The app has one file that matters to Probegen: `app/graph.py`. All agent behavior is defined there as inline Python string constants (`GRADE_PROMPT`, `REWRITE_PROMPT`, `GENERATE_PROMPT`) and as node functions. There are no separate prompt files — this is intentional. It lets Probegen demonstrate that it detects behavioral changes in Python constants, not just in dedicated prompt files.
 
+### About the `probegen.yaml` configuration
+
+The `probegen.yaml` file in this demo defines **hint patterns** that guide Probegen's discovery:
+
+- **`behavior_artifacts.paths: ["app/**"]`** — tells Probegen to pre-load files in the `app/` directory for efficiency
+- **`python_patterns`** — hints that the agent should look for Python module-level constants with these naming patterns
+
+**Important:** These patterns are *discovery hints*, not filters. The Stage 1 agent always sees **all changed files** in the PR and can inspect any of them using the Read and Bash tools. Files matching the configured patterns are pre-loaded with before/after content and diffs to optimize performance. Files that don't match are still visible to the agent — it just needs to fetch them on-demand.
+
+In this demo, the changes happen to be in `app/graph.py`, which matches the configured pattern, so they're pre-loaded. But if you modified a file outside `app/` with behavioral significance, Probegen's agent would still detect it.
+
 The demo patch (`changes/always_cite.patch`) modifies two of those constants in a single PR:
 
 - **`GRADE_PROMPT`**: relaxes the relevance grader from strict keyword/semantic matching to loose topical/thematic matching with a bias toward "yes" when uncertain
