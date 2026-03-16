@@ -62,7 +62,7 @@ def truncate_text(text: str, max_tokens: int, marker: str = TRUNCATED_MARKER) ->
         return text
 
     marker_tokens = encoding.encode(marker)
-    if len(marker_tokens) >= max_tokens:
+    if len(marker_tokens) > max_tokens:
         return encoding.decode(tokens[:max_tokens])
 
     budget = max_tokens - len(marker_tokens)
