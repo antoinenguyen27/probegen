@@ -128,7 +128,7 @@ The script is idempotent — running it twice does not create duplicates. Verify
 
 ## Step 5: Configure GitHub secrets and create the approval label
 
-In your GitHub repo, go to **Settings → Secrets and variables → Actions** and add:
+In your GitHub repo, go to **Settings → Secrets and variables → Actions** and add into your Repository Secrets:
 
 | Secret | Required for |
 |---|---|
