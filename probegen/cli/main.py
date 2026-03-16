@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import click
 
+from probegen import __version__
 from probegen.cli.doctor_cmd import doctor_command
 from probegen.cli.embed_batch import embed_batch_command
 from probegen.cli.find_similar import find_similar_command
@@ -15,6 +16,7 @@ from probegen.cli.write_probes import write_probes_command
 
 
 @click.group()
+@click.version_option(version=__version__)
 def cli() -> None:
     """Probegen command group."""
 
