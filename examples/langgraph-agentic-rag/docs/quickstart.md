@@ -53,7 +53,7 @@ If you are reading this from inside a repo you already copied, skip this step.
 
 ---
 
-## Step 2: Install dependencies and smoke-test the app
+## Step 2: Install dependencies and set up environment
 
 ```bash
 python -m venv .venv
@@ -62,7 +62,26 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Open `.env` and fill in `OPENAI_API_KEY`. The other variables can wait until later steps. Then run two queries that exercise the two behavioral paths this demo targets:
+Open `.env` and fill in all three API keys:
+
+- **`ANTHROPIC_API_KEY`** — Required by Probegen (not this app)
+- **`OPENAI_API_KEY`** — Required by the app (all LLM calls and embeddings)
+- **`LANGSMITH_API_KEY`** — Required because tracing is enabled; without it, the app will fail with auth errors
+
+Get your keys from:
+- Anthropic: [console.anthropic.com → API Keys](https://console.anthropic.com/account/keys)
+- OpenAI: [platform.openai.com → API Keys](https://platform.openai.com/account/api-keys)
+- LangSmith: [smith.langchain.com → Settings → API Keys](https://smith.langchain.com)
+
+The `.env.example` file also includes an optional `USER_AGENT` variable, already set to a sensible default. This silences warnings when the app fetches the blog URLs.
+
+**Why all three API keys upfront?** The app has `LANGSMITH_TRACING=true` enabled by default. If you skip the LangSmith key, tracing will fail with a 401 error. It's cleaner to set all keys now than to debug auth failures later.
+
+---
+
+## Step 3: Smoke-test the app
+
+Run two queries that exercise the two behavioral paths this demo targets:
 
 ```bash
 # Factual question — should trigger retrieval and return a grounded answer
@@ -81,18 +100,11 @@ These two queries are specifically chosen because the demo patch creates regress
 
 ---
 
-## Step 3: Seed the baseline eval dataset in LangSmith
+## Step 4: Seed the baseline eval dataset in LangSmith
 
 The demo expects a LangSmith dataset named `lilian-weng-rag-baseline`. This is already referenced in `probegen.yaml` under `mappings`. Without it, Stage 2 cannot run in coverage-aware mode and will fall back to starter mode.
 
-Get a LangSmith API key from [smith.langchain.com](https://smith.langchain.com) → Settings → API Keys. Add it to your `.env` file:
-
-```
-LANGSMITH_API_KEY=your_key_here
-LANGSMITH_TRACING=true
-```
-
-Then seed the dataset:
+Seed the dataset:
 
 ```bash
 python scripts/seed_langsmith_dataset.py
@@ -114,7 +126,7 @@ The script is idempotent — running it twice does not create duplicates. Verify
 
 ---
 
-## Step 4: Configure GitHub secrets and create the approval label
+## Step 5: Configure GitHub secrets and create the approval label
 
 In your GitHub repo, go to **Settings → Secrets and variables → Actions** and add:
 
@@ -134,7 +146,7 @@ Or go to **Issues → Labels → New label** and create a label named exactly `p
 
 ---
 
-## Step 5: Review the Probegen config and workflow
+## Step 6: Review the Probegen config and workflow
 
 This repo already contains everything Probegen needs. You do not need to create any of these files.
 
@@ -168,7 +180,7 @@ mappings:
 
 ---
 
-## Step 6: Open the demo PR
+## Step 7: Open the demo PR
 
 Create a branch and apply the demo patch:
 
@@ -200,7 +212,7 @@ Both changes are individually plausible developer decisions. The compound regres
 
 ---
 
-## Step 7: Inspect the Probegen artifacts
+## Step 8: Inspect the Probegen artifacts
 
 When the `probegen-analyze` workflow completes (~2–4 minutes), look for:
 
@@ -226,7 +238,7 @@ Compare your output against the reference examples in [`expected_outputs/`](../e
 
 ---
 
-## Step 8: Approve and merge
+## Step 9: Approve and merge
 
 Add the `probegen:approve` label to the PR **before merging**. In the PR sidebar on GitHub, click **Labels** and select `probegen:approve`. Then merge the PR.
 
@@ -239,7 +251,7 @@ The `probegen-write` job will:
 
 ---
 
-## Step 9: Confirm probes were written to LangSmith
+## Step 10: Confirm probes were written to LangSmith
 
 Go to [smith.langchain.com](https://smith.langchain.com), open the `lilian-weng-rag-baseline` dataset, and confirm you see new examples added by Probegen.
 

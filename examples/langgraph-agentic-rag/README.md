@@ -29,8 +29,8 @@ This demo is deliberately coverage-aware: it seeds a small LangSmith dataset so 
 ## Fast path
 
 1. Copy this directory into its own Git repository.
-2. Follow [docs/langgraph-agentic-rag-quickstart.md](/docs/langgraph-agentic-rag-quickstart.md).
-3. Seed the LangSmith dataset: `python scripts/seed_langsmith_dataset.py`
+2. Follow [docs/quickstart.md](docs/quickstart.md).
+3. The quickstart covers seeding the LangSmith dataset in Step 4.
 4. Open a PR using `changes/always_cite.patch`.
 5. Review the generated Probegen comment and artifacts.
 
