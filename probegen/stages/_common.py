@@ -101,6 +101,16 @@ async def _run_query(
             cost_usd=result_message.total_cost_usd,
             partial_result=partial,
         )
+    if result_message.subtype == "error_max_structured_output_retries":
+        truncated = (
+            str(result_message.result or "")[:300]
+        ).replace("\n", "\\n")
+        raise SchemaValidationError(
+            f"Stage {stage_num} structured output failed after all retries — "
+            f"the agent could not produce JSON matching the required schema. "
+            f"Check that the prompt clearly describes all required fields.\n"
+            f"Raw response (first 300 chars): {truncated}"
+        )
     if result_message.is_error:
         raise StageError(
             result_message.result or "Agent SDK error",

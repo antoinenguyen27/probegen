@@ -56,11 +56,50 @@ PROCESS:
    - Set changes array to empty []
    - Set compound_change_detected to false
    - This is a valid, complete response. Return it as JSON.
-9. Output BehaviorChangeManifest JSON only. No prose.
+9. Output BehaviorChangeManifest JSON only. No prose. No markdown code fences.
+
+OUTPUT FIELD REFERENCE:
+
+Manifest-level fields (copy these values exactly — do not compute them yourself):
+  schema_version:  "1.0"
+  run_id:          "{run_id}"
+  pr_number:       {pr_number}
+  commit_sha:      "{commit_sha}"
+  timestamp:       "{timestamp}"
+
+Manifest-level fields you must assess:
+  pr_intent_summary       — one-sentence summary of what the PR intends to change behaviorally
+  pr_description_alignment — overall alignment between PR description and all changes found
+  overall_risk            — "low" | "medium" | "high"
+  compound_change_detected — true if two or more changes interact to amplify risk
+
+pr_description_alignment must be exactly one of:
+  "confirmed"    — PR description matches the code changes
+  "contradicted" — PR description contradicts the code changes
+  "unknown"      — insufficient information to assess
+
+Each BehaviorChange in the changes array must use these exact field names:
+  artifact_path             (string)  full file path, e.g. "app/graph.py"
+  artifact_type             (string)  one of the values listed in step 5 above
+  artifact_class            (string)  e.g. "behavior_defining" or "guardrail"
+  change_type               (string)  "modification" | "addition" | "deletion"
+  inferred_intent           (string)  what this individual change intends to do
+  pr_description_alignment  (string)  "confirmed" | "contradicted" | "unknown"
+  unintended_risk_flags     (list of strings)  risks that are not the stated intent
+  affected_components       (list of strings)  e.g. ["app/graph.py::grade_documents"]
+  false_negative_risks      (list of strings)  ways the change could cause missed detections
+  false_positive_risks      (list of strings)  ways the change could cause false alarms
+  change_summary            (string)  one-line summary of the change
+
+Each CompoundChange in the compound_changes array must use:
+  artifact_paths  (list of strings)
+  summary         (string)  how the changes interact and amplify risk
+
+Do not use any other field names. Extra fields will cause validation to fail.
 """
 
 
-def render_stage1_prompt(raw_change_data: dict, context) -> str:
+def render_stage1_prompt(raw_change_data: dict, context, *, run_id: str, timestamp: str) -> str:
     pr_metadata = {
         "pr_number": raw_change_data.get("pr_number"),
         "pr_title": raw_change_data.get("pr_title"),
@@ -85,4 +124,8 @@ def render_stage1_prompt(raw_change_data: dict, context) -> str:
         hint_patterns_json=json.dumps(hint_patterns, indent=2),
         base_branch=base_branch,
         python_patterns_hint=", ".join(python_patterns) if python_patterns else "e.g. *_prompt, *_instruction, system_*",
+        run_id=run_id,
+        pr_number=raw_change_data.get("pr_number", 0),
+        commit_sha=raw_change_data.get("head_sha", ""),
+        timestamp=timestamp,
     )

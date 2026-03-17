@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from claude_agent_sdk import ClaudeAgentOptions
@@ -20,7 +22,9 @@ def run_stage1(
     *,
     cwd: str | Path | None = None,
 ) -> StageRunResult:
-    prompt = render_stage1_prompt(raw_change_data, context)
+    run_id = f"stage1-{int(time.time())}"
+    timestamp = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    prompt = render_stage1_prompt(raw_change_data, context, run_id=run_id, timestamp=timestamp)
 
     # Generate JSON schema for structured output validation
     output_schema = model_json_schema(
