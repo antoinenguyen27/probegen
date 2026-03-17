@@ -1,19 +1,21 @@
 diff --git a/app/graph.py b/app/graph.py
-index 873970f..a8c2c3c 100644
 --- a/app/graph.py
 +++ b/app/graph.py
-@@ -64,7 +64,8 @@ GRADE_PROMPT = (
+@@ -60,10 +60,11 @@ def generate_query_or_respond(state: MessagesState):
+ GRADE_PROMPT = (
      "You are a grader assessing relevance of a retrieved document to a user question. \n "
      "Here is the retrieved document: \n\n {context} \n\n"
      "Here is the user question: {question} \n"
 -    "If the document contains keyword(s) or semantic meaning related to the user question, grade it as relevant. \n"
+-    "Give a binary score 'yes' or 'no' score to indicate whether the document is relevant to the question."
 +    "If the document has any topical or thematic connection to the user question, grade it as relevant. \n"
 +    "When in doubt, prefer to grade the document as relevant rather than irrelevant. \n"
-     "Give a binary score 'yes' or 'no' score to indicate whether the document is relevant to the question."
++    "Give a binary score 'yes' or 'no' score to indicate whether the document is relevant to the question."
  )
- 
-@@ -122,8 +123,7 @@ def rewrite_question(state: MessagesState):
-     GENERATE_PROMPT = (
+
+
+@@ -118,9 +119,8 @@ def rewrite_question(state: MessagesState):
+ GENERATE_PROMPT = (
      "You are an assistant for question-answering tasks. "
      "Use the following pieces of retrieved context to answer the question. "
 -    "If you don't know the answer, just say that you don't know. "
