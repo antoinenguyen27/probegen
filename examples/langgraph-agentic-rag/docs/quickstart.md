@@ -4,7 +4,7 @@ This quickstart walks you through a complete Probegen workflow using a real Lang
 
 1. A working agentic RAG app running locally
 2. A seeded LangSmith baseline eval dataset
-3. A PR that introduces a compound behavioral regression
+3. A PR that introduces a single prompt addition with a non-obvious risk
 4. Probegen's Stage 1–3 artifacts: detected changes, coverage gaps, and proposed probes
 5. Probes written back to LangSmith after merge approval
 
@@ -27,12 +27,11 @@ The `probegen.yaml` file in this demo defines **hint patterns** that guide Probe
 
 In this demo, the changes happen to be in `app/graph.py`, which matches the configured pattern, so they're pre-loaded. But if you modified a file outside `app/` with behavioral significance, Probegen's agent would still detect it.
 
-The demo patch (`changes/always_cite.patch`) modifies two of those constants in a single PR:
+The demo patch (`changes/always_cite.patch`) modifies one constant:
 
-- **`GRADE_PROMPT`**: relaxes the relevance grader from strict keyword/semantic matching to loose topical/thematic matching with a bias toward "yes" when uncertain
-- **`GENERATE_PROMPT`**: removes both the "say you don't know" instruction and the three-sentence conciseness constraint, replacing them with "provide a thorough and complete answer"
+- **`GENERATE_PROMPT`**: adds two sentences requiring the generator to cite the source blog post for each claim, and to avoid fabricating a source when the origin cannot be determined
 
-Each change sounds reasonable in isolation. Together they create a compound regression: the permissive grader lets loosely matched passages through, and the generator then produces verbose confident answers from that weak context instead of admitting uncertainty. Probegen's Stage 1 flags this as a compound change. Stage 2 identifies that the seeded baseline only partially covers the affected behavior. Stage 3 proposes probes targeting the specific gaps.
+The change sounds entirely reasonable — citations improve transparency. The non-obvious risk is that `retrieve_blog_posts` returns raw `page_content` only, with no source metadata. The model must infer which blog post a chunk came from based on text alone, and may fabricate or misattribute citations when chunks are ambiguous. Probegen's Stage 1 flags this gap. Stage 2 identifies that no existing baseline cases test citation presence or accuracy. Stage 3 proposes probes targeting those specific gaps.
 
 ---
 
@@ -198,28 +197,22 @@ Create a branch and apply the demo patch:
 ```bash
 git checkout -b demo/always-cite
 git apply changes/always_cite.patch
-git commit -am "Relax grading threshold and make answers more thorough"
+git commit -am "Add citation instructions to answer generation prompt"
 git push -u origin demo/always-cite
 gh pr create \
-  --title "Relax grading threshold and make answers more thorough" \
-  --body "Makes the relevance grader more permissive and removes the conciseness constraint from the generator."
+  --title "Add citation instructions to answer generation prompt" \
+  --body "Instructs the generator to cite the source blog post for each claim, and to avoid fabricating a source when the origin cannot be determined."
 ```
 
 **What the patch changes in `app/graph.py`:**
-
-`GRADE_PROMPT` before:
-> If the document contains keyword(s) or semantic meaning related to the user question, grade it as relevant. Give a binary score 'yes' or 'no'.
-
-`GRADE_PROMPT` after:
-> If the document has **any topical or thematic connection** to the user question, grade it as relevant. **When in doubt, prefer to grade the document as relevant rather than irrelevant.** Give a binary score 'yes' or 'no'.
 
 `GENERATE_PROMPT` before:
 > If you don't know the answer, just say that you don't know. Use three sentences maximum and keep the answer concise.
 
 `GENERATE_PROMPT` after:
-> Provide a **thorough and complete answer** using all available context.
+> If you don't know the answer, just say that you don't know. Use three sentences maximum and keep the answer concise. For each claim you make, cite the blog post it comes from (e.g., 'According to the hallucination post, ...'). If you cannot identify the source, do not fabricate one.
 
-Both changes are individually plausible developer decisions. The compound regression — verbose confident answers from loosely matched context — is not obvious from reading either diff in isolation.
+The change is individually plausible. The risk — that the retriever passes only raw text with no source metadata, leaving the model to infer or fabricate citations — is not visible from reading the prompt diff alone.
 
 ---
 
@@ -232,20 +225,19 @@ When the `probegen-analyze` workflow completes (~2–4 minutes), look for:
 
 Compare your output against the reference examples in [`expected_outputs/`](../expected_outputs/). The exact wording will differ, but the structure should match:
 
-**Stage 1 (`stage1.json`)** — should show `compound_change_detected: true` with two entries in `changes[]`:
-- `GRADE_PROMPT` change: `artifact_type: python_variable`, inferred intent is relaxed relevance grading with a permissive bias
-- `GENERATE_PROMPT` change: removed uncertainty admission, removed conciseness constraint
-- The `compound_changes` array explains how the two interact: permissive grading passes weak context to a generator that no longer admits uncertainty
+**Stage 1 (`stage1.json`)** — should show `compound_change_detected: false` with one entry in `changes[]`:
+- `GENERATE_PROMPT` change: `artifact_type: python_variable`, inferred intent is per-claim citation of source blog posts
+- Two `unintended_risk_flags`: one about missing source metadata in the retriever, one about the citation instruction potentially conflicting with the three-sentence conciseness constraint
 
-**Stage 2 (`stage2.json`)** — should show `coverage_ratio: 0.4` (2 of 5 baseline cases cover the changed behavior). Three gaps should appear:
-- `gap_001` (uncovered): no case tests the combined failure — permissive grading passes weak context and the generator produces a confident verbose answer instead of admitting uncertainty
-- `gap_002` (boundary_shift): no case tests keyword-overlap misrouting, where a word like "temporal" appears in both the hallucination and diffusion-video posts and triggers the wrong passage under the permissive grader
-- `gap_003` (uncovered): no case asserts answer length compliance now that the three-sentence constraint is removed
+**Stage 2 (`stage2.json`)** — should show `coverage_ratio: 0.0` (no existing baseline cases test citation behavior at all). Three gaps should appear:
+- `gap_001` (uncovered): no case checks whether generated answers include a citation or whether any citation is accurate
+- `gap_002` (boundary_shift): no case tests citation accuracy when retrieved chunks span multiple blog posts in a single response
+- `gap_003` (uncovered): no case tests whether the model actually refrains from fabricating a source when chunk text is ambiguous
 
-**Stage 3 (`stage3.json`)** — should propose three probes:
-- A `boundary_probe` targeting keyword-overlap confusion (e.g., a question about temporal attention in transformers, where "temporal" is a false signal that the permissive grader accepts)
-- An `overcorrection_probe` targeting cross-post misrouting (a question where a passage from the wrong blog post could produce a wrong confident answer)
-- A `regression_guard` targeting answer length on a question that previously returned a concise two-sentence response
+**Stage 3 (`stage3.json`)** — should propose three probes in ascending order of difficulty:
+- A `regression_guard` with a single-source question (one clear answer in one post) — the simplest citation check
+- A `boundary_probe` with a cross-post question — tests whether the model correctly attributes claims to the right post when both are relevant
+- An `overcorrection_probe` with an ambiguous question — tests whether the model actually omits a citation rather than producing a vague or fabricated one
 
 ---
 
@@ -281,10 +273,10 @@ Each written example will include metadata such as:
 
 ## What this demo pressure-tests
 
-- **Compound prompt changes**: two prompt constants changed in one PR; neither change alone predicts the regression
+- **Non-obvious prompt risk**: the citation instruction looks correct in isolation; the risk only becomes visible when you trace what the retriever actually passes to the generator
 - **Coverage-aware mode**: Stage 2 has a real baseline to compare against and identifies specific gaps rather than generating from scratch
 - **Python constant detection**: prompts are inline strings in `app/graph.py`, not `.md` files — Probegen finds them via `python_patterns: ["*_PROMPT"]`
-- **Keyword-overlap boundary cases**: the three blog posts share vocabulary (e.g., "temporal") that creates false relevance signals under the permissive grader
+- **Cross-post attribution cases**: the three blog posts share vocabulary, so citation accuracy depends on the model correctly inferring source identity from raw chunk text
 - **End-to-end artifact handoff**: the merge-time job downloads the exact artifact from the PR analysis run, not a recomputed version
 
 ---
@@ -300,4 +292,4 @@ Each written example will include metadata such as:
 
 ## Why this example works better than a hello-world app
 
-A single-prompt hello-world app produces one behavioral change and one probe. The point of this demo is different: a small, individually plausible prompt change should create realistic, compound, change-coupled eval work that is genuinely hard to notice without tooling. This app is just complex enough to make that visible — three blog posts, four graph nodes, three prompt constants — without adding setup drag.
+A single-prompt hello-world app produces one behavioral change and one obvious probe. The point of this demo is different: a small, individually plausible prompt change should create realistic eval gaps that are genuinely hard to notice without tooling. This app is just complex enough to make that visible — three blog posts, four graph nodes, three prompt constants — without adding setup drag.
