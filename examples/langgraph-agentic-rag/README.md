@@ -10,7 +10,7 @@ This demo is deliberately coverage-aware: it seeds a small LangSmith dataset so 
 
 1. A baseline LangGraph RAG agent that retrieves from three Lilian Weng blog posts.
 2. A seeded LangSmith dataset with partial coverage.
-3. A compound prompt change (GRADE_PROMPT + GENERATE_PROMPT) that creates obvious evaluation gaps.
+3. A single prompt change (`GENERATE_PROMPT`) that adds a citation requirement — an individually reasonable addition that introduces a non-obvious risk because the retriever does not expose source metadata to the generator.
 4. The full Probegen workflow:
    - detect the behavior change,
    - compare it to existing eval coverage,
@@ -23,28 +23,12 @@ This demo is deliberately coverage-aware: it seeds a small LangSmith dataset so 
 - `context/`: Probegen context pack
 - `.github/workflows/probegen.yml`: GitHub Actions workflow for the copied demo repo
 - `scripts/seed_langsmith_dataset.py`: seeds the baseline eval dataset in LangSmith
-- `changes/always_cite.patch`: intentional PR change used in the tutorial (modifies GRADE_PROMPT and GENERATE_PROMPT in app/graph.py)
+- `changes/always_cite.patch`: intentional PR change used in the tutorial (modifies `GENERATE_PROMPT` in `app/graph.py`)
 - `expected_outputs/`: illustrative Stage 1-3 artifacts for the patch
 
-## Fast path
+## Getting started
 
-1. Copy this directory into its own Git repository.
-2. Follow [docs/quickstart.md](docs/quickstart.md).
-3. The quickstart covers seeding the LangSmith dataset in Step 4.
-4. Open a PR using `changes/always_cite.patch`.
-5. Review the generated Probegen comment and artifacts.
-
-## Local app smoke test
-
-Install the app dependencies, then run:
-
-```bash
-pip install -r requirements.txt
-python -m app.main "What does Lilian Weng say about types of reward hacking?"
-python -m app.main "Thanks for the help"
-```
-
-The first question should retrieve from the reward-hacking blog post and return a concise grounded answer. The second should respond naturally without retrieval.
+Follow [docs/quickstart.md](docs/quickstart.md). It covers environment setup, seeding the LangSmith dataset, applying the demo patch, and inspecting Probegen's output end-to-end.
 
 ## Knowledge base
 
@@ -53,12 +37,3 @@ Documents are loaded at startup from three Lilian Weng blog posts via `WebBaseLo
 - https://lilianweng.github.io/posts/2024-11-28-reward-hacking/
 - https://lilianweng.github.io/posts/2024-07-07-hallucination/
 - https://lilianweng.github.io/posts/2024-04-12-diffusion-video/
-
-## Environment variables
-
-Copy `.env.example` to `.env` and fill in:
-
-```
-OPENAI_API_KEY=...
-LANGSMITH_API_KEY=...
-```
