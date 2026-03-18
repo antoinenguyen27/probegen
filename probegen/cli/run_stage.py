@@ -51,7 +51,9 @@ def run_stage_command(
 
     try:
         ProbegenConfig.load(config_path, allow_missing=False)
+        click.echo(f"[probegen] Config loaded from {config_path}", err=True)
     except ConfigError:
+        click.echo(f"[probegen] Config not found at {config_path} — using defaults", err=True)
         if os.environ.get("GITHUB_ACTIONS") == "true":
             click.echo(
                 "probegen: warning: probegen.yaml not found; running with empty artifact detection.\n"
@@ -69,6 +71,7 @@ def run_stage_command(
         if stage == 1:
             if pr_number is None or base_branch is None:
                 raise SystemExit(5)
+            click.echo(f"[probegen] Stage 1 starting — PR #{pr_number}, base={base_branch}", err=True)
             raw_change_data = build_raw_change_data(
                 base_branch,
                 pr_number,
@@ -77,19 +80,45 @@ def run_stage_command(
             )
             result = run_stage1(raw_change_data.model_dump(mode="json"), context, config)
             metadata = build_metadata(1, result)
+            cost = f"${result.cost_usd:.4f}" if result.cost_usd is not None else "n/a"
+            click.echo(
+                f"[probegen] Stage 1 complete — model={result.model} cost={cost} "
+                f"duration={result.duration_ms}ms turns={result.num_turns}",
+                err=True,
+            )
         elif stage == 2:
             if manifest_path is None:
                 raise SystemExit(5)
             manifest = _load_json(manifest_path)
+            artifact_count = len(manifest.get("hint_matched_artifacts", []))
+            click.echo(
+                f"[probegen] Stage 2 starting — {artifact_count} artifact(s) from Stage 1",
+                err=True,
+            )
             result = run_stage2(manifest, config, mcp_servers=mcp_path if mcp_payload["mcpServers"] else {})
             metadata = build_metadata(2, result)
+            cost = f"${result.cost_usd:.4f}" if result.cost_usd is not None else "n/a"
+            click.echo(
+                f"[probegen] Stage 2 complete — model={result.model} cost={cost} "
+                f"duration={result.duration_ms}ms turns={result.num_turns}",
+                err=True,
+            )
         else:
             if manifest_path is None or gaps_path is None:
                 raise SystemExit(5)
             manifest = _load_json(manifest_path)
             gaps = _load_json(gaps_path)
+            gap_count = len(gaps.get("gaps", []))
+            click.echo(f"[probegen] Stage 3 starting — {gap_count} coverage gap(s) from Stage 2", err=True)
             result = run_stage3(manifest, gaps, context, config)
             metadata = build_metadata(3, result)
+            cost = f"${result.cost_usd:.4f}" if result.cost_usd is not None else "n/a"
+            click.echo(
+                f"[probegen] Stage 3 complete — model={result.model} cost={cost} "
+                f"duration={result.duration_ms}ms turns={result.num_turns} "
+                f"probes={result.data.probe_count}",
+                err=True,
+            )
     except BudgetExceededError as exc:
         if exc.partial_result is not None:
             _write_json(output_path, exc.partial_result)

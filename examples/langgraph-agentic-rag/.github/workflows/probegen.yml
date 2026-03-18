@@ -35,11 +35,29 @@ jobs:
           npm install -g @anthropic-ai/claude-code
 
       - name: Stage 1 - Change Detection
+        id: stage1
         run: |
+          echo "::group::Stage 1 — Change Detection (agent running)"
           probegen run-stage 1 \
             --pr-number ${{ github.event.pull_request.number }} \
             --base-branch ${{ github.event.pull_request.base.ref }} \
             --output .probegen/stage1.json
+          echo "::endgroup::"
+          if [ -f .probegen/metadata.json ]; then
+            python3 - <<'PYEOF'
+          import json
+          try:
+              m = json.load(open(".probegen/metadata.json"))
+              cost = f"${m['cost_usd']:.4f}" if m.get("cost_usd") is not None else "n/a"
+              print(
+                  f"::notice::Stage 1 — model={m.get('model','n/a')} "
+                  f"cost={cost} duration={m.get('duration_ms','n/a')}ms "
+                  f"turns={m.get('num_turns','n/a')} prompt_tokens={m.get('prompt_tokens','n/a')}"
+              )
+          except Exception as e:
+              print(f"::warning::Could not read Stage 1 metadata: {e}")
+          PYEOF
+          fi
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -48,31 +66,74 @@ jobs:
       - name: Check gate
         id: gate
         run: |
-          has_changes=$(python -c "
+          has_changes=$(python3 -c "
           import json
           manifest = json.load(open('.probegen/stage1.json'))
           print('true' if manifest.get('has_changes') else 'false')
           ")
           echo "has_changes=$has_changes" >> $GITHUB_OUTPUT
+          if [ "$has_changes" = "true" ]; then
+            echo "::notice::Gate OPEN — behavioral artifact changes detected, proceeding to Stage 2 & 3"
+          else
+            echo "::notice::Gate CLOSED — no behavioral artifact changes, skipping Stage 2 & 3"
+          fi
 
       - name: Stage 2 - Coverage Analysis
+        id: stage2
         if: steps.gate.outputs.has_changes == 'true'
         run: |
+          echo "::group::Stage 2 — Coverage Analysis (agent running)"
           probegen run-stage 2 \
             --manifest .probegen/stage1.json \
             --output .probegen/stage2.json
+          echo "::endgroup::"
+          if [ -f .probegen/metadata.json ]; then
+            python3 - <<'PYEOF'
+          import json
+          try:
+              m = json.load(open(".probegen/metadata.json"))
+              cost = f"${m['cost_usd']:.4f}" if m.get("cost_usd") is not None else "n/a"
+              print(
+                  f"::notice::Stage 2 — model={m.get('model','n/a')} "
+                  f"cost={cost} duration={m.get('duration_ms','n/a')}ms "
+                  f"turns={m.get('num_turns','n/a')} prompt_tokens={m.get('prompt_tokens','n/a')}"
+              )
+          except Exception as e:
+              print(f"::warning::Could not read Stage 2 metadata: {e}")
+          PYEOF
+          fi
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
 
       - name: Stage 3 - Probe Generation
+        id: stage3
         if: steps.gate.outputs.has_changes == 'true'
         run: |
+          echo "::group::Stage 3 — Probe Generation (agent running)"
           probegen run-stage 3 \
             --manifest .probegen/stage1.json \
             --gaps .probegen/stage2.json \
             --output .probegen/stage3.json
+          echo "::endgroup::"
+          if [ -f .probegen/metadata.json ]; then
+            python3 - <<'PYEOF'
+          import json
+          try:
+              m = json.load(open(".probegen/metadata.json"))
+              s3 = json.load(open(".probegen/stage3.json")) if __import__("pathlib").Path(".probegen/stage3.json").exists() else {}
+              cost = f"${m['cost_usd']:.4f}" if m.get("cost_usd") is not None else "n/a"
+              probes = s3.get("probe_count", "n/a")
+              print(
+                  f"::notice::Stage 3 — model={m.get('model','n/a')} "
+                  f"cost={cost} duration={m.get('duration_ms','n/a')}ms "
+                  f"turns={m.get('num_turns','n/a')} probes_generated={probes}"
+              )
+          except Exception as e:
+              print(f"::warning::Could not read Stage 3 metadata: {e}")
+          PYEOF
+          fi
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
@@ -90,6 +151,42 @@ jobs:
             --pr-number ${{ github.event.pull_request.number }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Job summary
+        if: always()
+        run: |
+          python3 - <<'PYEOF'
+          import json, os, pathlib
+
+          def load(path):
+              p = pathlib.Path(path)
+              return json.loads(p.read_text()) if p.exists() else {}
+
+          s1 = load(".probegen/stage1.json")
+          s3 = load(".probegen/stage3.json")
+
+          pr = "${{ github.event.pull_request.number }}"
+          sha = "${{ github.event.pull_request.head.sha }}"[:7]
+          artifacts = len(s1.get("hint_matched_artifacts", []))
+          has_changes = s1.get("has_changes", False)
+          probes = s3.get("probe_count", 0) if has_changes else 0
+
+          lines = [
+              "## Probegen Run Summary",
+              "",
+              "| Field | Value |",
+              "|-------|-------|",
+              f"| PR | #{pr} |",
+              f"| SHA | `{sha}` |",
+              f"| Behavioral artifacts changed | {artifacts} |",
+              f"| Probes generated | {probes} |",
+          ]
+
+          summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary_path:
+              with open(summary_path, "a") as f:
+                  f.write("\n".join(lines) + "\n")
+          PYEOF
 
       - name: Upload artifacts
         if: always()

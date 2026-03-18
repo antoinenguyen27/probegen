@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 
 def _git(repo: Path, *args: str) -> str:
     completed = subprocess.run(
@@ -18,6 +20,7 @@ def _git(repo: Path, *args: str) -> str:
     return completed.stdout.strip()
 
 
+@pytest.mark.integration
 def test_get_behavior_diff_against_real_git_repo(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import json
+import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -113,12 +114,26 @@ async def _run_query(
     last_model: str | None = None
     last_assistant_error: str | None = None
     result_message: ResultMessage | None = None
+    turn_count = 0
+
+    print(
+        f"[stage-{stage_num}] Agent starting — max_turns={options.max_turns} budget=${options.max_budget_usd:.2f}",
+        file=sys.stderr,
+        flush=True,
+    )
 
     async for message in query(prompt=prompt, options=options):
         if isinstance(message, AssistantMessage):
+            turn_count += 1
             last_model = message.model
             if message.error:
                 last_assistant_error = message.error
+            else:
+                preview = message_text(message)[:120].replace("\n", " ").strip()
+                if preview:
+                    print(f"[stage-{stage_num}] turn {turn_count}: {preview}", file=sys.stderr, flush=True)
+                else:
+                    print(f"[stage-{stage_num}] turn {turn_count}: (tool use / no text)", file=sys.stderr, flush=True)
         elif isinstance(message, ResultMessage):
             result_message = message
 
@@ -235,7 +250,14 @@ async def run_stage_with_retry(
                     "Rate limit persisted after retries",
                     stage=stage_num,
                 ) from None
-            await asyncio.sleep(waits[attempt])
+            wait = waits[attempt]
+            print(
+                f"[stage-{stage_num}] Rate limited on attempt {attempt + 1}/{max_retries}. "
+                f"Waiting {wait}s before retry...",
+                file=sys.stderr,
+                flush=True,
+            )
+            await asyncio.sleep(wait)
     raise StageError(f"Stage {stage_num} failed after retries", stage=stage_num)
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,6 +27,18 @@ def run_stage2(
     run_id = f"stage2-{int(time.time())}"
     timestamp = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     prompt = render_stage2_prompt(stage1_manifest)
+
+    behavior_count = len(stage1_manifest.get("behaviors", []))
+    mcp_configured = isinstance(mcp_servers, (str, Path)) or (
+        isinstance(mcp_servers, dict) and bool(mcp_servers)
+    )
+    prompt_tokens = count_tokens(prompt)
+    print(
+        f"[stage-2] behaviors_from_stage1={behavior_count} mcp_configured={mcp_configured} "
+        f"prompt_tokens={prompt_tokens}",
+        file=sys.stderr,
+        flush=True,
+    )
 
     output_schema = simplify_schema(
         CoverageGapManifest.model_json_schema(),
@@ -56,5 +69,7 @@ def run_stage2(
             },
         )
     )
-    result.extras = {"prompt_tokens": count_tokens(prompt)}
+    gap_count = len(getattr(result.data, "gaps", []))
+    print(f"[stage-2] gaps_identified={gap_count}", file=sys.stderr, flush=True)
+    result.extras = {"prompt_tokens": prompt_tokens}
     return result

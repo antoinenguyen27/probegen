@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -36,6 +37,15 @@ def run_stage3(
         stage2_manifest,
         context,
         max_probes_surfaced=config.generation.max_probes_surfaced,
+    )
+
+    gap_count = len(stage2_manifest.get("gaps", []))
+    prompt_tokens = count_tokens(prompt)
+    print(
+        f"[stage-3] gaps_to_probe={gap_count} max_probes_surfaced={config.generation.max_probes_surfaced} "
+        f"prompt_tokens={prompt_tokens}",
+        file=sys.stderr,
+        flush=True,
     )
 
     output_schema = simplify_schema(
@@ -74,13 +84,29 @@ def run_stage3(
 
     gap_models = [CoverageGap.model_validate(gap) for gap in stage2_manifest.get("gaps", [])]
     ranked = rank_probes(result.data.probes, gap_models)
+    print(f"[stage-3] probes_raw={len(result.data.probes)} probes_ranked={len(ranked)}", file=sys.stderr, flush=True)
+
     diversified = apply_diversity_limit(
         ranked,
         limit_per_gap=config.generation.diversity_limit_per_gap,
     )
+    print(
+        f"[stage-3] probes_after_diversity_limit={len(diversified)} "
+        f"(limit_per_gap={config.generation.diversity_limit_per_gap})",
+        file=sys.stderr,
+        flush=True,
+    )
+
     result.data.probes = diversified[: config.generation.max_probes_surfaced]
     result.data.probe_count = len(result.data.probes)
+    print(
+        f"[stage-3] probes_final={result.data.probe_count} "
+        f"(max_surfaced={config.generation.max_probes_surfaced})",
+        file=sys.stderr,
+        flush=True,
+    )
+
     if context.warnings:
         result.data.warnings.extend(context.warnings)
-    result.extras = {"prompt_tokens": count_tokens(prompt)}
+    result.extras = {"prompt_tokens": prompt_tokens}
     return result

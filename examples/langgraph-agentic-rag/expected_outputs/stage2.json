@@ -6,8 +6,8 @@
   "unmapped_artifacts": [],
   "coverage_summary": {
     "total_relevant_cases": 5,
-    "cases_covering_changed_behavior": 2,
-    "coverage_ratio": 0.4,
+    "cases_covering_changed_behavior": 0,
+    "coverage_ratio": 0.0,
     "platform": "langsmith",
     "dataset": "lilian-weng-rag-baseline",
     "mode": "coverage_aware",
@@ -19,13 +19,13 @@
       "gap_id": "gap_001",
       "artifact_path": "app/graph.py",
       "gap_type": "uncovered",
-      "related_risk_flag": "The agent will no longer say it does not know when retrieved context is insufficient — it will attempt a thorough answer instead",
-      "description": "The baseline has one unsupported question (lilian-unsupported-moe) that tests the no-retrieval path. It does not test the more dangerous combined failure: a question where retrieval returns a tangentially related passage, GRADE_PROMPT passes it, and GENERATE_PROMPT then produces a confident verbose answer instead of admitting uncertainty.",
+      "related_risk_flag": "Retrieved context is assembled from raw page_content only — source metadata (URL, title) is not passed to the generator. The model must infer blog post identity from chunk text alone, and may fabricate or misattribute citations when chunks are ambiguous.",
+      "description": "No baseline case checks whether generated answers include a citation, or whether any citation present is accurate. All existing evaluators assert correctness of factual content but have no rubric for citation presence or attribution. Under the new GENERATE_PROMPT, the model will attempt to name source blog posts from raw chunk text — a behavior that is entirely untested.",
       "nearest_existing_cases": [
         {
-          "case_id": "lilian-unsupported-moe",
-          "input_normalized": "What does Lilian Weng say about mixture-of-experts architectures?",
-          "similarity": 0.67,
+          "case_id": "lilian-reward-hacking-types",
+          "input_normalized": "What does Lilian Weng say about types of reward hacking?",
+          "similarity": 0.71,
           "classification": "related"
         }
       ],
@@ -37,14 +37,14 @@
       "gap_id": "gap_002",
       "artifact_path": "app/graph.py",
       "gap_type": "boundary_shift",
-      "related_risk_flag": "Tangentially related passages may now pass grading and reach the generator as context",
-      "description": "No baseline case tests a question where a retrieved passage has partial keyword overlap with the query (e.g., 'temporal' appearing in both the hallucination and diffusion-video posts). Under the new permissive GRADE_PROMPT, such a passage would pass grading and the generator would produce a thorough answer from mismatched content.",
+      "related_risk_flag": "Retrieved context is assembled from raw page_content only — source metadata (URL, title) is not passed to the generator. The model must infer blog post identity from chunk text alone, and may fabricate or misattribute citations when chunks are ambiguous.",
+      "description": "No baseline case tests citation accuracy when retrieved chunks span multiple blog posts in a single response. The retriever may surface passages from the hallucination and reward-hacking posts together. Without source metadata, the model must attribute each claim to the correct post from text cues alone — a cross-post attribution scenario that has no existing coverage.",
       "nearest_existing_cases": [
         {
           "case_id": "lilian-diffusion-lumiere",
           "input_normalized": "How does Lumiere differ from cascade-based video generation approaches like Imagen Video?",
-          "similarity": 0.71,
-          "classification": "boundary"
+          "similarity": 0.63,
+          "classification": "related"
         }
       ],
       "priority": "high",
@@ -55,13 +55,13 @@
       "gap_id": "gap_003",
       "artifact_path": "app/graph.py",
       "gap_type": "uncovered",
-      "related_risk_flag": "Answers may become significantly longer and harder for users to scan",
-      "description": "No baseline case verifies answer length compliance. With the three-sentence constraint removed, factual retrieval questions that previously produced concise answers will now produce multi-paragraph responses. The existing cases check correctness of content but do not assert conciseness.",
+      "related_risk_flag": "Retrieved context is assembled from raw page_content only — source metadata (URL, title) is not passed to the generator. The model must infer blog post identity from chunk text alone, and may fabricate or misattribute citations when chunks are ambiguous.",
+      "description": "No baseline case tests the model's behavior when chunk text does not contain enough internal signal to identify its source blog post. The model is instructed not to fabricate a citation, but no existing case verifies it actually refrains — or that it does not silently produce a vague placeholder such as 'the blog post' that satisfies the instruction syntactically but provides no useful attribution.",
       "nearest_existing_cases": [
         {
-          "case_id": "lilian-reward-hacking-types",
-          "input_normalized": "What does Lilian Weng say about types of reward hacking?",
-          "similarity": 0.74,
+          "case_id": "lilian-unsupported-moe",
+          "input_normalized": "What does Lilian Weng say about mixture-of-experts architectures?",
+          "similarity": 0.58,
           "classification": "related"
         }
       ],

@@ -178,6 +178,8 @@ def build_raw_change_data(
 
     payload = _read_event_payload(env)
     all_changed_files = _list_all_changed_files(base_branch)
+    click.echo(f"[probegen] {len(all_changed_files)} file(s) changed in this PR", err=True)
+
     hint_matched_artifacts: list[ChangedArtifact] = []
 
     for changed_file in all_changed_files:
@@ -204,6 +206,14 @@ def build_raw_change_data(
             )
         )
 
+    click.echo(
+        f"[probegen] {len(hint_matched_artifacts)} hint-matched artifact(s) "
+        f"(of {len(all_changed_files)} changed file(s))",
+        err=True,
+    )
+    for artifact in hint_matched_artifacts:
+        click.echo(f"  → {artifact.change_kind}: {artifact.path} ({artifact.artifact_type})", err=True)
+
     hint_patterns = HintPatterns(
         behavior_paths=list(config.behavior_artifacts.paths),
         guardrail_paths=list(config.guardrail_artifacts.paths),
@@ -212,6 +222,13 @@ def build_raw_change_data(
     )
 
     changed_paths = {f.path for f in all_changed_files}
+    unchanged_hint_matches = _list_unchanged_hint_matches(config, changed_paths)
+    if unchanged_hint_matches:
+        click.echo(
+            f"[probegen] {len(unchanged_hint_matches)} unchanged hint-matched file(s) passed as context",
+            err=True,
+        )
+
     pull_request = payload["pull_request"]
     data = RawChangeData(
         pr_number=pr_number,
@@ -224,7 +241,7 @@ def build_raw_change_data(
         all_changed_files=all_changed_files,
         hint_matched_artifacts=hint_matched_artifacts,
         hint_patterns=hint_patterns,
-        unchanged_hint_matches=_list_unchanged_hint_matches(config, changed_paths),
+        unchanged_hint_matches=unchanged_hint_matches,
         has_changes=bool(all_changed_files),
         artifact_count=len(all_changed_files),
     )

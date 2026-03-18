@@ -3,21 +3,21 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from probegen.export import render_summary_markdown, write_run_artifacts
+from probegen.export import export_deepeval_stub, render_summary_markdown, write_run_artifacts
 from probegen.github import render_pr_comment, render_results_comment
 from probegen.models import BehaviorChangeManifest, CoverageGapManifest, ProbeProposal
 
+_FIXTURES = Path(__file__).parents[2] / "fixtures"
 
-def _load_fixture(path: str) -> dict:
-    return json.loads(Path(path).read_text(encoding="utf-8"))
+
+def _load_fixture(name: str) -> dict:
+    return json.loads((_FIXTURES / name).read_text(encoding="utf-8"))
 
 
 def test_write_run_artifacts_creates_expected_files(tmp_path: Path) -> None:
-    manifest = BehaviorChangeManifest.model_validate(
-        _load_fixture("tests/fixtures/sample_manifest.json")
-    )
-    gaps = CoverageGapManifest.model_validate(_load_fixture("tests/fixtures/sample_gaps.json"))
-    proposal = ProbeProposal.model_validate(_load_fixture("tests/fixtures/sample_proposal.json"))
+    manifest = BehaviorChangeManifest.model_validate(_load_fixture("sample_manifest.json"))
+    gaps = CoverageGapManifest.model_validate(_load_fixture("sample_gaps.json"))
+    proposal = ProbeProposal.model_validate(_load_fixture("sample_proposal.json"))
 
     outputs = write_run_artifacts(
         run_dir=tmp_path / ".probegen" / "runs" / proposal.commit_sha,
@@ -36,11 +36,9 @@ def test_write_run_artifacts_creates_expected_files(tmp_path: Path) -> None:
 
 
 def test_render_pr_comment_includes_marker_and_probe_table() -> None:
-    manifest = BehaviorChangeManifest.model_validate(
-        _load_fixture("tests/fixtures/sample_manifest.json")
-    )
-    gaps = CoverageGapManifest.model_validate(_load_fixture("tests/fixtures/sample_gaps.json"))
-    proposal = ProbeProposal.model_validate(_load_fixture("tests/fixtures/sample_proposal.json"))
+    manifest = BehaviorChangeManifest.model_validate(_load_fixture("sample_manifest.json"))
+    gaps = CoverageGapManifest.model_validate(_load_fixture("sample_gaps.json"))
+    proposal = ProbeProposal.model_validate(_load_fixture("sample_proposal.json"))
 
     comment = render_pr_comment(proposal, stage1_manifest=manifest, stage2_manifest=gaps)
 
@@ -51,10 +49,8 @@ def test_render_pr_comment_includes_marker_and_probe_table() -> None:
 
 
 def test_render_pr_comment_reports_bootstrap_mode_without_eval_corpus() -> None:
-    manifest = BehaviorChangeManifest.model_validate(
-        _load_fixture("tests/fixtures/sample_manifest.json")
-    )
-    proposal = ProbeProposal.model_validate(_load_fixture("tests/fixtures/sample_proposal.json"))
+    manifest = BehaviorChangeManifest.model_validate(_load_fixture("sample_manifest.json"))
+    proposal = ProbeProposal.model_validate(_load_fixture("sample_proposal.json"))
     bootstrap_gaps = CoverageGapManifest.model_validate(
         {
             "run_id": "stage2-bootstrap",
@@ -83,7 +79,7 @@ def test_render_pr_comment_reports_bootstrap_mode_without_eval_corpus() -> None:
 
 
 def test_render_summary_markdown_lists_probes() -> None:
-    proposal = ProbeProposal.model_validate(_load_fixture("tests/fixtures/sample_proposal.json"))
+    proposal = ProbeProposal.model_validate(_load_fixture("sample_proposal.json"))
     summary = render_summary_markdown(proposal)
 
     assert "# Probegen Probe Summary" in summary
@@ -99,3 +95,42 @@ def test_render_results_comment_handles_zero_writes() -> None:
 
     assert "No probes were written" in comment
     assert "Targets attempted" in comment
+
+
+def test_write_run_artifacts_includes_deepeval_file(tmp_path: Path) -> None:
+    proposal = ProbeProposal.model_validate(_load_fixture("sample_proposal.json"))
+
+    outputs = write_run_artifacts(
+        run_dir=tmp_path / "runs" / proposal.commit_sha,
+        proposal=proposal,
+        metadata={},
+    )
+
+    assert "deepeval" in outputs
+    assert outputs["deepeval"].exists()
+    content = outputs["deepeval"].read_text(encoding="utf-8")
+    assert "LLMTestCase" in content
+    assert "CASES" in content
+
+
+def test_export_deepeval_stub_contains_one_entry_per_probe(tmp_path: Path) -> None:
+    proposal = ProbeProposal.model_validate(_load_fixture("sample_proposal.json"))
+
+    path = export_deepeval_stub(proposal, output_path=tmp_path / "probes_deepeval.py")
+
+    assert path.exists()
+    content = path.read_text(encoding="utf-8")
+    # sample_proposal has 2 probes → 2 LLMTestCase calls
+    assert content.count("LLMTestCase(") == len(proposal.probes)
+
+
+def test_render_results_comment_with_pass_fail_counts() -> None:
+    comment = render_results_comment(
+        dataset_name="langsmith:evals",
+        total_written=3,
+        passed=2,
+        failed=1,
+    )
+
+    assert "3 probes written to" in comment
+    assert "2 passed, 1 failed" in comment

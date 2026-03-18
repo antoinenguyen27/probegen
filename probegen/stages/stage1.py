@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,6 +27,14 @@ def run_stage1(
     run_id = f"stage1-{int(time.time())}"
     timestamp = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     prompt = render_stage1_prompt(raw_change_data, context)
+
+    artifact_count = len(raw_change_data.get("hint_matched_artifacts", []))
+    prompt_tokens = count_tokens(prompt)
+    print(
+        f"[stage-1] Analyzing {artifact_count} hint-matched artifact(s) — prompt_tokens={prompt_tokens}",
+        file=sys.stderr,
+        flush=True,
+    )
 
     output_schema = simplify_schema(
         BehaviorChangeManifest.model_json_schema(),
@@ -57,5 +66,5 @@ def run_stage1(
             },
         )
     )
-    result.extras = {"prompt_tokens": count_tokens(prompt)}
+    result.extras = {"prompt_tokens": prompt_tokens}
     return result
