@@ -7,7 +7,7 @@ from probegen.cli.write_probes import _selected_probes, write_probes_from_propos
 from probegen.config import MappingConfig, PlatformsConfig, ProbegenConfig, PromptfooPlatformConfig
 from probegen.models import ProbeProposal
 
-_FIXTURES = Path(__file__).parents[2] / "fixtures"
+_FIXTURES = Path(__file__).parents[1] / "fixtures"
 
 
 def _load_fixture(name: str) -> dict:

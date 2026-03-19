@@ -7,7 +7,7 @@ from probegen.export import export_deepeval_stub, render_summary_markdown, write
 from probegen.github import render_pr_comment, render_results_comment
 from probegen.models import BehaviorChangeManifest, CoverageGapManifest, ProbeProposal
 
-_FIXTURES = Path(__file__).parents[2] / "fixtures"
+_FIXTURES = Path(__file__).parents[1] / "fixtures"
 
 
 def _load_fixture(name: str) -> dict:

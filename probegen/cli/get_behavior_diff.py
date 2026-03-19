@@ -41,7 +41,7 @@ def _run_git(args: list[str], *, cwd: Path | None = None) -> str:
 
 
 def _read_event_payload(env: dict[str, str] | None = None) -> dict[str, Any]:
-    event_path_str = (env or os.environ).get("GITHUB_EVENT_PATH", "")
+    event_path_str = (os.environ if env is None else env).get("GITHUB_EVENT_PATH", "")
     if not event_path_str:
         raise EventPayloadError("GITHUB_EVENT_PATH is not set")
     event_path = Path(event_path_str)
