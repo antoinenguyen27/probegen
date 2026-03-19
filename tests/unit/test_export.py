@@ -44,8 +44,10 @@ def test_render_pr_comment_includes_marker_and_probe_table() -> None:
 
     assert comment.startswith("<!-- probegen-comment -->")
     assert "### Proposed Probes (2)" in comment
-    assert "probe_001" not in comment
+    assert "probe_001" in comment  # Now included in collapsible details
     assert "boundary_probe" in comment
+    assert "<details>" in comment  # Collapsible sections present
+    assert "Full Details" in comment  # Instruction text present
 
 
 def test_render_pr_comment_reports_bootstrap_mode_without_eval_corpus() -> None:
