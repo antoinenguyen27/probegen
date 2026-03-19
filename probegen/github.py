@@ -8,10 +8,70 @@ import httpx
 from probegen.errors import GithubApiError
 from probegen.models import BehaviorChangeManifest, CoverageGapManifest, ProbeProposal
 from probegen.models.eval_case import ConversationMessage
+from probegen.models.probes import ProbeCase
 
 PROBEGEN_COMMENT_MARKER = "<!-- probegen-comment -->"
 PROBEGEN_RESULTS_MARKER = "<!-- probegen-results -->"
 GITHUB_API_VERSION = "2022-11-28"
+
+
+def _format_probe_input_for_display(probe: "ProbeCase") -> str:  # type: ignore
+    """Format full probe input for display in details section."""
+    if probe.input_format == "conversation" and probe.input:
+        import json
+
+        messages = [
+            item.model_dump() if isinstance(item, ConversationMessage) else item for item in probe.input
+        ]
+        return json.dumps(messages, indent=2, ensure_ascii=False)
+    else:
+        return str(probe.input) if probe.input else "(empty)"
+
+
+def _format_probe_details(probe: "ProbeCase", index: int) -> str:  # type: ignore
+    """Format a single probe's full details for collapsible section."""
+    lines = [
+        f"<details>",
+        f"<summary><strong>📋 Probe #{index} — {probe.probe_type}</strong></summary>",
+        "",
+        f"**Probe ID:** `{probe.probe_id}`  ",
+        f"**Gap ID:** `{probe.gap_id}`  ",
+        f"**Risk flag:** {probe.related_risk_flag}",
+        "",
+        "**Full Input:**",
+        "```json",
+        _format_probe_input_for_display(probe),
+        "```",
+        "",
+        f"**Expected Behavior:** {probe.expected_behavior}  ",
+        f"**Behavior Type:** `{probe.expected_behavior_type}`",
+    ]
+
+    if probe.rubric:
+        lines.extend(["", f"**Rubric:** {probe.rubric}"])
+
+    lines.extend(
+        [
+            "",
+            "**Rationale:** " + probe.probe_rationale,
+            "",
+            "**Confidence Scores:**  ",
+            f"- Specificity: {probe.specificity_confidence:.2f}  ",
+            f"- Testability: {probe.testability_confidence:.2f}  ",
+            f"- Realism: {probe.realism_confidence:.2f}",
+        ]
+    )
+
+    if probe.nearest_existing_case_id and probe.nearest_existing_similarity is not None:
+        lines.extend(
+            [
+                "",
+                f"**Nearest similar case:** `{probe.nearest_existing_case_id}` ({probe.nearest_existing_similarity:.2f} similarity)",
+            ]
+        )
+
+    lines.extend(["", "</details>"])
+    return "\n".join(lines)
 
 
 def github_headers(token: str) -> dict[str, str]:
@@ -253,9 +313,21 @@ def render_pr_comment(
         lines.append(
             f"| {index} | `{probe.probe_type}` | `{preview}` | {probe.expected_behavior} |"
         )
+
     lines.extend(
         [
             "",
+            "> 💡 **Click _Full Details_ below to review each probe's rationale, confidence scores, and full input.**",
+            "",
+        ]
+    )
+
+    for index, probe in enumerate(proposal.probes, start=1):
+        lines.append(_format_probe_details(probe, index))
+        lines.append("")
+
+    lines.extend(
+        [
             "**To approve all probes:** Add label `probegen:approve` to this PR **before merging**.  ",
             f"**Full proposal + rationale:** `{proposal.export_formats.raw_json or '.probegen/ProbeProposal.json'}`  ",
             f"**Promptfoo export:** `{proposal.export_formats.promptfoo or '.probegen/probes.yaml'}`",
