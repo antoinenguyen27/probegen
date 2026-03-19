@@ -536,6 +536,9 @@ def init_command(context_only: bool, dry_run: bool) -> None:
         click.echo("  5. Run `probegen doctor` to verify your setup.")
     except click.Abort as exc:
         raise SystemExit(1) from exc
+    except OSError as exc:
+        click.echo(f"probegen init: write error: {exc}", err=True)
+        raise SystemExit(2) from exc
 
 
 if __name__ == "__main__":

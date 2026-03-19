@@ -19,7 +19,7 @@ Probegen works out of the box even if you have no evals yet. In that case it gen
 ## Prerequisites
 
 - Python 3.11+
-- Node.js 22+ — required in CI by the GitHub Action (installed automatically). Only needed locally if running `probegen run-stage` directly.
+- Node.js 22+ — required everywhere (CI and local). Probegen runs Agent SDK sessions via Node.js. Even running `probegen run-stage` locally requires Node.js to be installed and available in your PATH.
 - An Anthropic API key
 - An eval platform API key only if you want direct platform integration or automatic writeback
 

@@ -54,7 +54,8 @@ def run_stage3(
     )
 
     options = ClaudeAgentOptions(
-        allowed_tools=[],  # Stage 3 is pure generation from prompt context; no tools needed
+        allowed_tools=[],  # Stage 3 is pure generation from prompt context.
+                           # Ranking and diversity filtering happen post-generation in the orchestrator (similarity.py).
         mcp_servers={},
         max_turns=25,
         max_budget_usd=config.budgets.stage3_usd,

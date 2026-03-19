@@ -16,7 +16,7 @@
 6. [Pipeline: Stage 1 — Change Detection and Intent Analysis](#6-pipeline-stage-1)
 7. [Pipeline: Stage 2 — Coverage Gap Analysis](#7-pipeline-stage-2)
 8. [Pipeline: Stage 3 — Probe Generation and Proposal](#8-pipeline-stage-3)
-9. [Pipeline: Stage 4 — Platform Write and Auto-Run](#9-pipeline-stage-4)
+9. [Pipeline: Stage 4 — Platform Write](#9-pipeline-stage-4)
 10. [Approval Mechanism](#10-approval-mechanism)
 11. [Eval Platform Integrations](#11-eval-platform-integrations)
 12. [GitHub Action and CI Integration](#12-github-action-and-ci-integration)
@@ -36,6 +36,8 @@ Probegen is not an eval runner. It does not execute evals. It generates eval *in
 Probegen runs as a non-blocking parallel job in GitHub Actions. It does not gate or delay merges. It surfaces a PR comment containing a ranked, rationale-annotated set of proposed eval probes for developer review, and writes approved probes to the eval platform after an explicit human approval step.
 
 Probegen should be framed as working out of the box, while improving with more coverage and more context. Like many LLM applications, the more evals teams already have and the more detail they provide about product behavior, users, and failure modes, the better the generated recommendations become.
+
+> **Terminology note:** Probegen uses "bootstrap mode" in internal code and configuration (field name `coverage_summary.mode == "bootstrap"`), and "Starter mode" in user-facing PR comments. They refer to the same concept: when no existing eval corpus is available, Probegen generates starter coverage grounded in the diff and product context. Throughout this spec, we use the user-facing term "Starter mode."
 
 ---
 
@@ -75,7 +77,7 @@ The Agent SDK gives Claude Code's full agent loop — codebase traversal, tool e
 - **Cost control per stage.** `max_budget_usd` prevents runaway costs in CI.
 - **MCP first-class.** Platform integrations via MCP are native to the SDK, not shell-invoked.
 
-The CLI (`--print` flag) is for one-shot scripting. The Agent SDK is for products built on top of the agent loop. Probegen is the latter.
+The Claude Agent SDK's CLI (`claude code --print ...`) is designed for one-shot scripting. Probegen, however, uses the Agent SDK as a Python library to orchestrate multi-stage reasoning. This allows Probegen to maintain state across stages, parse structured outputs, and implement approval gates — features that require programmatic control, not CLI automation.
 
 ### Why Phased Stages With JSON Handoffs
 
@@ -120,7 +122,7 @@ Pull Request (GitHub)
 │           ▼ BehaviorChangeManifest.json             │
 │                    │                                │
 │              [GATE: any changes?]                   │
-│              NO → stop, no comment                  │
+│              NO → post "no changes" comment, stop   │
 │              YES ↓                                  │
 │                                                     │
 │  Stage 2: Coverage Gap Analysis                     │
@@ -140,11 +142,10 @@ Pull Request (GitHub)
         │
         ▼
 ┌─────────────────────────────────────────────────────┐
-│  Stage 4: Platform Write + Auto-Run                 │
+│  Stage 4: Platform Write                            │
 │  Triggered: PR merge + probegen:approve label       │
 │  [write_probes.py — direct platform SDK calls]      │
-│  [auto-run scoped to new probes]                    │
-│  [post results to merged PR]                        │
+│  [post write-outcome comment to merged PR]          │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -153,12 +154,102 @@ Pull Request (GitHub)
 | Component | Responsibility |
 |---|---|
 | Claude Agent SDK (Stages 1–3) | Reasoning, codebase traversal, MCP orchestration, probe generation |
-| `get_behavior_diff` tool | Deterministic: git diff + PR metadata → structured change data |
+| `get_behavior_diff` tool | Orchestrator-invoked (pre-Stage 1): git diff + PR metadata → structured `RawChangeData` JSON. Injected into Stage 1 prompt; not agent-called. |
 | `embed_batch` tool | Deterministic: batch embed eval inputs, cache results |
 | `find_similar` tool | Deterministic: cosine similarity, classify as duplicate/boundary/related/novel |
 | MCP servers (Stage 2) | Read access to eval platforms: LangSmith, Braintrust, Arize Phoenix, Promptfoo |
 | `write_probes.py` (Stage 4) | Deterministic: approved probes → platform SDK write calls. No agent involved. |
 | Context Pack | Static files: product context, user profiles, interaction patterns, good/bad examples, traces |
+
+**Hint patterns are optimization hints, not gates.** The `behavior_artifacts.paths` and `guardrail_artifacts.paths` patterns in `probegen.yaml` are used to pre-load files with content for Stage 1's efficiency, not to filter what the agent analyzes. Stage 1 receives all changed files in the PR and decides what matters. Files matching patterns are just fetched faster.
+
+### RawChangeData Contract: Orchestrator-to-Stage-1 Handoff
+
+The `get_behavior_diff` CLI tool is invoked by the orchestrator before Stage 1 begins. It wraps three data sources (git diff, GitHub webhook payload, pre-loaded hint match content) and returns a single structured JSON object — the `RawChangeData` — which is injected into the Stage 1 prompt.
+
+#### Invocation
+
+```bash
+probegen get-behavior-diff \
+  --base-branch main \
+  --pr-number 142 \
+  --config probegen.yaml
+```
+
+#### Input Sources
+
+**Source 1 — Git diff (unfiltered)**
+`git diff origin/{base_branch}...HEAD` fetches all changed files in the PR with no pathspec filtering. Config patterns are used only to decide which files to pre-load with full content (see Source 3).
+
+**Source 2 — GitHub event payload**
+Read from `$GITHUB_EVENT_PATH` (webhook payload schema post-October 2025). Provides:
+- `pull_request.number`, `.title`, `.body`, `.base.ref`, `.head.sha`
+- `pull_request.labels[]`, `.user.login`
+- `repository.full_name`
+
+**Source 3 — Pre-loaded hint match content**
+For files matching `behavior_artifacts.paths` or `guardrail_artifacts.paths` patterns: full before/after content and a unified diff with 5 lines of context. Non-matching files are listed in `all_changed_files` but not pre-loaded — Stage 1 fetches them via tools if relevant.
+
+#### Output: RawChangeData Schema
+
+```json
+{
+  "schema_version": "1.0",
+  "pr_number": 142,
+  "pr_title": "Add citation requirement to CitationAgent",
+  "pr_body": "This change adds a rule requiring the agent to...",
+  "pr_labels": ["enhancement", "prompts"],
+  "base_branch": "main",
+  "head_sha": "abc123def456",
+  "repo_full_name": "org/repo",
+  "all_changed_files": [
+    { "path": "prompts/citation_agent/system_prompt.md", "change_kind": "modification", "renamed_from": null },
+    { "path": "src/config.py", "change_kind": "modification", "renamed_from": null }
+  ],
+  "hint_matched_artifacts": [
+    {
+      "path": "prompts/citation_agent/system_prompt.md",
+      "artifact_class": "behavior_defining",
+      "artifact_type": "system_prompt",
+      "change_kind": "modification",
+      "before_content": "You are a helpful assistant...",
+      "after_content": "You are a helpful assistant. Always cite sources...",
+      "raw_diff": "@@ -3,4 +3,5 @@\n You are a helpful assistant.\n+Always cite sources when answering factual questions.\n",
+      "before_sha": "sha256:aabbcc...",
+      "after_sha": "sha256:ddeeff..."
+    }
+  ],
+  "hint_patterns": {
+    "behavior_paths": ["prompts/**", "agents/**/*.md"],
+    "guardrail_paths": ["judges/**", "validators/**"],
+    "behavior_python_patterns": ["*_prompt", "*_instruction", "system_*"],
+    "guardrail_python_patterns": ["*_judge*", "*_validator*", "*_classifier*"]
+  },
+  "unchanged_hint_matches": [
+    "prompts/planner/planner_prompt.md"
+  ],
+  "has_changes": true,
+  "artifact_count": 2
+}
+```
+
+**Field notes:**
+- `all_changed_files` — every file modified, added, deleted, or renamed in the PR. No filtering. `artifact_count` equals `len(all_changed_files)`.
+- `hint_matched_artifacts` — files matching configured hint patterns, pre-loaded with before/after content for efficiency. A subset of `all_changed_files`.
+- `hint_patterns` — the patterns from `probegen.yaml`, passed as agent guidance (not gates).
+- `unchanged_hint_matches` — tracked files matching `behavior_artifacts.paths` that are NOT in this PR. Gives the agent context about stability.
+- `has_changes` — true if `all_changed_files` is non-empty.
+
+#### Return Codes
+
+| Code | Meaning |
+|---|---|
+| 0 | Success, JSON written to stdout |
+| 1 | Git error (no history, bad base branch) |
+| 2 | `GITHUB_EVENT_PATH` not set or malformed |
+| 3 | `probegen.yaml` not found or invalid |
+
+When `has_changes` is false, the JSON is still valid and complete — `all_changed_files` is empty. Stage 1 produces a `BehaviorChangeManifest` with `has_changes: false`, which gates out Stages 2–3. The workflow posts a "no behavioral changes detected" comment.
 
 ---
 
@@ -224,24 +315,23 @@ context:
 
 ### `probegen init` Context Pack Prompting
 
-During `probegen init`, if no context directory exists, the user is asked:
+During `probegen init`, you're asked whether to create stub files for the context pack:
 
 ```
-No context/ directory found. Probegen works significantly better with product context.
-Would you like to create a context pack? (recommended)
-
-We'll create stub files for:
-  context/product.md         — What your product does and who uses it
-  context/users.md           — User profiles and personas
-  context/interactions.md    — Common flows and interaction patterns
-  context/good_examples.md   — Examples of correct agent behavior
-  context/bad_examples.md    — Known failure modes and edge cases
-  context/traces/            — (optional) Anonymised production trace samples
-
-[Y/n]
+5. Create a context/ directory with stub files? [Y/n]:
 ```
 
-Stub files are pre-populated with section headers and brief instructions. The user fills them in. Probegen functions without a Context Pack but emits a warning on every run indicating that probe quality will be significantly reduced.
+If you choose yes, Probegen creates six files with section headers and prompts:
+- `context/product.md` — What your product does and who uses it
+- `context/users.md` — User profiles and personas
+- `context/interactions.md` — Common flows and interaction patterns
+- `context/good_examples.md` — Examples of correct agent behavior
+- `context/bad_examples.md` — Known failure modes and edge cases
+- `context/traces/README.md` — (optional) Information about adding production trace samples
+
+Open these files in your editor and fill in each section. The section headers explain what to write.
+
+**Context pack impact:** Probegen works significantly better with a filled-in context pack. Without it, probes are generic ("Does the agent respond helpfully?"). With it, probes are specific to your product ("Does the citation rule still apply to customer service queries?"). Probegen functions without context but emits a warning indicating probe quality will be significantly reduced.
 
 ---
 
@@ -263,7 +353,7 @@ Every PR open, synchronize, or reopen event.
 from claude_agent_sdk import query, ClaudeAgentOptions
 
 async for message in query(
-    prompt=render_stage1_prompt(context),
+    prompt=render_stage1_prompt(raw_change_data, context),
     options=ClaudeAgentOptions(
         allowed_tools=["Bash", "Read", "Glob"],
         mcp_servers=[],          # no MCP in Stage 1
@@ -429,7 +519,7 @@ Stage 1 completed with `has_changes: true`.
 async for message in query(
     prompt=render_stage2_prompt(manifest=stage1_manifest),
     options=ClaudeAgentOptions(
-        allowed_tools=["Bash"],
+        allowed_tools=[],  # empty = all tools permitted, including MCP servers and Bash
         mcp_servers=get_configured_mcp_servers(),  # LangSmith, Braintrust, Arize, etc.
         max_turns=40,
         max_budget_usd=0.75,
@@ -463,8 +553,10 @@ Raw diffs are not passed to Stage 2. They were needed for Stage 1's reasoning; t
 
 The agent uses MCP tools to retrieve eval cases for the datasets mapped to the changed artifacts in `probegen.yaml`. If no mapping exists for an artifact, it posts a warning (see Section 15: Missing Mapping Handling). If a mapping exists but the dataset is empty, or no datasets exist at all, Stage 2 records bootstrap coverage instead of failing.
 
-**`embed_batch` (probegen tool, called via Bash)**  
-Takes a list of normalised input strings, returns embeddings using `text-embedding-3-small` (default) or configured alternative. Uses SQLite cache at `.probegen/embedding_cache.db`. Returns embeddings; never re-embeds inputs with a cache hit.
+> **Note on `allowed_tools=[]`:** Stage 2's Agent SDK options set `allowed_tools=[]`, which in the Agent SDK means "all tools permitted" (including MCP servers). This is necessary because Stage 2 needs both Bash access (to call `embed_batch` and `find_similar` tools) and MCP access (to query configured eval platforms). An empty list grants the broadest access.
+
+**`embed_batch` (probegen tool, called via Bash)**
+Takes a list of normalised input strings, returns embeddings using OpenAI's API (`text-embedding-3-small` or `text-embedding-3-large`, configured in `probegen.yaml`). Uses SQLite cache at `.probegen/embedding_cache.db`. Returns embeddings; never re-embeds inputs with a cache hit. (Note: Probegen currently supports OpenAI embeddings only.)
 
 ```bash
 probegen embed-batch --inputs inputs.json --output embeddings.json
@@ -601,7 +693,7 @@ async for message in query(
         context_pack=load_context_pack(),
     ),
     options=ClaudeAgentOptions(
-        allowed_tools=["Bash"],   # only for find_similar on generated candidates
+        allowed_tools=[],         # Stage 3 is pure generation from prompt context
         mcp_servers=[],           # no MCP in Stage 3
         max_turns=25,
         max_budget_usd=1.00,
@@ -706,6 +798,14 @@ based on quality criteria. Apply a diversity filter: no more than 2 probes per g
 
 Output ProbeProposal JSON only. No prose.
 ```
+
+**Post-Generation Processing (Orchestrator)**
+
+After the agent completes, the orchestrator (`stage3.py`) applies ranking and diversity filtering to the raw probes:
+- `rank_probes()` — Sort candidates by quality and relevance
+- `apply_diversity_limit()` — Filter to max 2 probes per gap (configurable via `generation.diversity_limit_per_gap`)
+
+These steps happen in Python, not via agent tool calls. This separation keeps Stage 3's reasoning focused on generation quality, with filtering logic isolated in the orchestration layer.
 
 ### Probe Types
 
@@ -845,7 +945,7 @@ def score_probe(probe: ProbeCase, gaps: list[Gap]) -> float:
 
 ---
 
-## 9. Pipeline: Stage 4 — Platform Write and Auto-Run
+## 9. Pipeline: Stage 4 — Platform Write
 
 ### Purpose
 
@@ -913,17 +1013,22 @@ def write_to_braintrust(probes, project, dataset_name, api_key):
 
 **Arize Phoenix** (MCP write confirmed, but direct SDK used for reliability in CI):
 ```python
-import phoenix as px
+from phoenix.client import Client
 
-def write_to_phoenix(probes, dataset_name):
-    client = px.Client()
-    client.upload_dataset(
-        dataset_name=dataset_name,
-        dataframe=probes_to_dataframe(probes),
-        input_keys=["input"],
-        output_keys=["expected_behavior"],
-        metadata_keys=["probe_type", "rationale", "probe_id"],
+def write_to_phoenix(probes, dataset_name, base_url: str, api_key: str):
+    client = Client(base_url=base_url, api_key=api_key)
+    # Using arize-phoenix-client==2.0.0 API (see DECISIONS.md)
+    dataset = client.datasets.create(
+        name=dataset_name,
+        description=f"Probegen auto-generated probes",
     )
+    for probe in probes:
+        dataset.append({
+            "input": probe.input,
+            "expected_behavior": probe.expected_behavior,
+            "probe_type": probe.probe_type,
+            "rationale": probe.rationale,
+        })
 ```
 
 **Promptfoo** (file append):
@@ -939,40 +1044,36 @@ def write_to_promptfoo(probes, test_file):
     # Creates a follow-up commit or PR; see CI config
 ```
 
-### Auto-Run
+### Write-Outcome Comment
 
-After write completes, trigger an eval run scoped to the newly added probes. This is platform-specific:
-
-- **LangSmith:** trigger dataset run via REST API filtered by `generated_by: probegen` and `source_commit: {sha}`
-- **Braintrust:** `braintrust eval` CLI with tag filter `probegen`
-- **Arize Phoenix:** `px.run_experiment()` scoped to the new dataset entries
-- **Promptfoo:** `promptfoo eval --filter-description "probegen"` 
-
-Auto-run is configurable and can be disabled:
-```yaml
-auto_run:
-  enabled: true
-  fail_on: regression_guard   # fail the Stage 4 job if any regression_guard probe fails
-  notify: pr_comment          # post results back to the merged PR
-```
-
-### Results Post-Back
-
-Stage 4 posts a follow-up comment on the merged PR (GitHub allows comments on closed/merged PRs):
+After write completes, Stage 4 posts a comment on the merged PR reporting the outcome:
 
 ```markdown
-## ✅ Probegen: Probes Added + Results
+## ✅ Probegen: Probes Written
 
-**7 probes written to:** `citation-agent-evals` (LangSmith)  
-**Auto-run completed:** 5 passed, 2 failed
+**7 probes written to:** `citation-agent-evals` (LangSmith)
+```
 
-### Failures
-| Probe | Type | Failure |
-|---|---|---|
-| probe_001 | `boundary_probe` | Agent inserted citation in conversational query — regression confirmed |
-| probe_006 | `ambiguity_probe` | Agent hallucinated source when evidence was unavailable |
+If write fails partially or entirely, the comment describes which targets failed and where the probe artifacts can be retrieved from GitHub Actions.
 
-**Regression detected.** Consider reverting or scoping the citation rule to factual query types only.
+### Auto-Run (Planned — v2)
+
+> **Not yet implemented.** The `auto_run` configuration block is parsed and stored but not executed in v1.
+
+After write completes, a future v2 release will trigger an eval run scoped to the newly added probes and post results back to the merged PR. Platform-specific trigger mechanisms:
+
+- **LangSmith:** REST API call filtered by `generated_by: probegen` and `source_commit: {sha}`
+- **Braintrust:** `braintrust eval` CLI with tag filter `probegen`
+- **Arize Phoenix:** `phoenix.client.Client().run_experiment()` scoped to the new dataset entries
+- **Promptfoo:** `promptfoo eval --filter-description "probegen"`
+
+The `auto_run` config block is present in the schema for forward compatibility but has no effect in v1:
+
+```yaml
+# auto_run:
+#   enabled: true
+#   fail_on: regression_guard
+#   notify: pr_comment
 ```
 
 ---
@@ -1001,11 +1102,21 @@ approval:
 
 ### Workflow Trigger for Stage 4
 
+The Stage 4 workflow is triggered when:
+1. A PR is merged
+2. The PR has the `probegen:approve` label
+3. The trigger is `pull_request_target` (not `pull_request`) for secure access to secrets
+
 ```yaml
 on:
-  pull_request:
+  pull_request_target:
     types: [closed]
-    
+
+permissions:
+  actions: read          # Required: resolve-run-id queries GitHub Actions API
+  contents: read
+  pull-requests: write
+
 jobs:
   probegen-write:
     if: |
@@ -1013,18 +1124,48 @@ jobs:
       contains(github.event.pull_request.labels.*.name, 'probegen:approve')
     runs-on: ubuntu-latest
     steps:
-      - name: Retrieve probe proposal
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install probegen
+
+      - name: Resolve analysis run
+        id: resolve
+        run: |
+          run_id=$(probegen resolve-run-id \
+            --repo ${{ github.repository }} \
+            --workflow-id probegen.yml \
+            --head-sha ${{ github.event.pull_request.head.sha }})
+          echo "run_id=$run_id" >> $GITHUB_OUTPUT
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download probe proposal
         uses: actions/download-artifact@v4
         with:
-          name: probegen-${{ github.event.pull_request.number }}
-          
-      - name: Write approved probes
-        run: python -m probegen.write_probes --proposal ProbeProposal.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ steps.resolve.outputs.run_id }}
+          name: probegen-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+          path: .probegen/
+
+      - name: Write probes to platform
+        run: |
+          probegen write-probes \
+            --proposal .probegen/stage3.json \
+            --config probegen.yaml
         env:
           LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
           BRAINTRUST_API_KEY: ${{ secrets.BRAINTRUST_API_KEY }}
+          PHOENIX_API_KEY: ${{ secrets.PHOENIX_API_KEY }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           COMMIT_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
 ```
 
 ---
@@ -1035,10 +1176,10 @@ jobs:
 
 | Platform | MCP Read | Write Method | Auto-Run | Notes |
 |---|---|---|---|---|
-| LangSmith | ✅ stdio server | Python SDK direct | REST API | MCP write is docs-only; SDK required for writes |
-| Braintrust | ✅ HTTP server (`api.braintrust.dev/mcp`) | Python SDK direct | `braintrust eval` CLI | MCP supports read/query; write confirmation pending |
-| Arize Phoenix | ✅ npm server (`@arizeai/phoenix-mcp`) | Python SDK direct | `px.run_experiment()` | Both read and write MCP confirmed; SDK used for CI reliability |
-| Promptfoo | ❌ File-based | File append | `promptfoo eval` CLI | No API; YAML file read/write |
+| LangSmith | ✅ stdio server | Python SDK direct | v2 (planned) | MCP write is docs-only; SDK required for writes |
+| Braintrust | ✅ HTTP server (`api.braintrust.dev/mcp`) | Python SDK direct | v2 (planned) | MCP supports read/query; write confirmation pending |
+| Arize Phoenix | ✅ npm server (`@arizeai/phoenix-mcp`) | Python SDK direct | v2 (planned) | Both read and write MCP confirmed; SDK used for CI reliability |
+| Promptfoo | ❌ File-based | File append | v2 (planned) | No API; YAML file read/write |
 | Humanloop | ❌ Sunsetted Sept 2025 | N/A | N/A | Removed from scope entirely |
 
 ### MCP Configuration Generation
@@ -1053,7 +1194,7 @@ def generate_mcp_config(config: ProbegenConfig, env: dict) -> dict:
         servers["langsmith"] = {
             "command": "uvx",
             "args": ["langsmith-mcp-server"],
-            "env": {"LANGCHAIN_API_KEY": env["LANGSMITH_API_KEY"]}
+            "env": {"LANGSMITH_API_KEY": env["LANGSMITH_API_KEY"]}
         }
     
     if env.get("BRAINTRUST_API_KEY") and config.platforms.braintrust:
@@ -1085,7 +1226,7 @@ Regardless of platform integration, every Stage 3 run writes to `.probegen/runs/
 ```
 .probegen/runs/{commit_sha}/
   ├── BehaviorChangeManifest.json     # Stage 1 output
-  ├── CoverageGapManifest.json        # Stage 2 output  
+  ├── CoverageGapManifest.json        # Stage 2 output
   ├── ProbeProposal.json              # Stage 3 output (all probes, full detail)
   ├── probes.yaml                     # Promptfoo-compatible, ready to use
   ├── summary.md                      # Human-readable full probe list with rationale
@@ -1093,6 +1234,154 @@ Regardless of platform integration, every Stage 3 run writes to `.probegen/runs/
 ```
 
 These artifacts are uploaded as GitHub Actions artifacts and retained for 90 days (configurable).
+
+### Prompt Rendering Contract
+
+Each stage prompt is a Python function in `probegen/prompts/` that assembles a structured input (RawChangeData, manifests, context pack) into a plain f-string template. No Jinja or external templating.
+
+#### Token Budgets and Truncation Strategy
+
+Stage 3 has a total context budget of 80,000 tokens (well within claude-sonnet-4's 200k context window, leaving headroom for agent tool calls and response). Token allocation by section:
+
+| Section | Token Budget | Truncation Strategy |
+|---|---|---|
+| System prompt template | ~3,000 | Fixed |
+| Stage 1 stripped manifest | ~2,000 | Fixed (structured JSON, already small) |
+| Stage 2 gap manifest | ~3,000 | Fixed (structured JSON) |
+| `product.md` | 4,000 | Hard truncate, append `[truncated]` |
+| `users.md` | 2,000 | Hard truncate |
+| `interactions.md` | 3,000 | Hard truncate |
+| `good_examples.md` | 3,000 | Hard truncate |
+| `bad_examples.md` | 4,000 | Hard truncate — highest-value section |
+| Trace samples | 6,000 | Random sample up to `trace_max_samples`, then truncate each to 300 tokens |
+| Nearest existing cases | 4,000 | Top 5 per gap, each truncated to 200 tokens |
+
+Token counting uses `tiktoken` with `cl100k_base` encoding. If total exceeds 80,000 tokens, fallback pass applies: reduce `good_examples` (3,000 → 1,500), reduce `bad_examples` (4,000 → 2,000), drop trace samples entirely. Fixed-budget sections are not reduced. No further retry.
+
+#### Stage 1 Rendering
+
+```python
+def render_stage1_prompt(raw_change_data: dict, context: ContextPack) -> str:
+    # ... extracts PR metadata, hint patterns from raw_change_data
+    return STAGE1_SYSTEM_TEMPLATE.format(
+        product_context=truncate(context.product, 4000),
+        bad_examples=truncate(context.bad_examples, 4000),
+        pr_metadata_json=json.dumps(pr_metadata, indent=2),
+        all_changed_files_json=json.dumps(raw_change_data.get("all_changed_files", []), indent=2),
+        hint_matched_artifacts_json=json.dumps(raw_change_data.get("hint_matched_artifacts", []), indent=2),
+        hint_patterns_json=json.dumps(hint_patterns, indent=2),
+        base_branch=raw_change_data.get("base_branch", "main"),
+        python_patterns_hint="...",
+    )
+```
+
+**Stage 1 receives:** product.md, bad_examples.md, and RawChangeData (PR metadata, all_changed_files, hint_matched_artifacts, hint_patterns). **Does NOT receive:** users.md, interactions.md, good_examples.md, traces. Agent fetches additional files via Read/Bash/Glob tools as needed.
+
+#### Stage 2 Rendering
+
+```python
+def render_stage2_prompt(stage1_manifest: dict) -> str:
+    stripped = strip_raw_diffs(stage1_manifest)  # remove before/after content, raw_diff
+    return STAGE2_SYSTEM_TEMPLATE.format(
+        manifest_json=json.dumps(stripped, indent=2),
+    )
+```
+
+**Stage 2 receives:** Only the stripped Stage 1 manifest. No context pack. MCP tools provide eval corpus data dynamically. If zero relevant eval cases found, produces `CoverageGapManifest` in bootstrap mode with `coverage_summary.mode = "bootstrap"` and empty `nearest_existing_cases` arrays.
+
+#### Stage 3 Rendering
+
+```python
+def render_stage3_prompt(stage1_manifest: dict, stage2_manifest: dict, context: ContextPack) -> str:
+    stage1_brief = extract_stage1_brief(stage1_manifest)  # intent + risk flags only
+    traces = sample_traces(context.traces_dir, max_samples=context.trace_max_samples)
+    return STAGE3_SYSTEM_TEMPLATE.format(
+        product_context=truncate(context.product, 4000),
+        users_context=truncate(context.users, 2000),
+        interactions_context=truncate(context.interactions, 3000),
+        good_examples=truncate(context.good_examples, 3000),
+        bad_examples=truncate(context.bad_examples, 4000),
+        trace_samples=format_traces(traces, max_tokens_each=300, total_budget=6000),
+        stage1_brief_json=json.dumps(stage1_brief, indent=2),
+        coverage_summary_json=json.dumps(stage2_manifest["coverage_summary"], indent=2),
+        gaps_json=json.dumps(stage2_manifest["gaps"], indent=2),
+        nearest_cases_json=format_nearest_cases(stage2_manifest["gaps"], max_per_gap=5),
+    )
+```
+
+**Stage 3 receives:** Full context pack, Stage 1 brief (intent + risk flags only, raw diffs/content stripped), Stage 2 coverage summary and gaps. This is the primary quality driver where the generator sees product context, users, patterns, examples, and real traces.
+
+### Embedding and Similarity Tools: `embed_batch` and `find_similar`
+
+Both are Python CLI entry points that Stage 2 invokes to classify probes against existing eval coverage.
+
+#### `embed_batch` Tool
+
+**Invocation:**
+```bash
+probegen embed-batch \
+  --inputs /tmp/inputs.json \
+  --output /tmp/embeddings.json \
+  --model text-embedding-3-small \
+  --cache .probegen/embedding_cache.db
+```
+
+**Input schema (`inputs.json`):**
+```json
+[
+  { "id": "case_a3f2", "text": "What year was the Paris Agreement signed?" },
+  { "id": "case_b17d", "text": "SYSTEM: ...\nUSER: Tell me about climate policy" }
+]
+```
+
+**Output schema (`embeddings.json`):**
+```json
+[
+  {
+    "id": "case_a3f2",
+    "text_hash": "sha256:aabb...",
+    "embedding": [0.0023, -0.0093, ...],
+    "model": "text-embedding-3-small",
+    "dimensions": 1536,
+    "cached": false
+  }
+]
+```
+
+**Cache behavior:** Compute `sha256(id + text)`. Check cache by `(id, text_hash, model)`. On hit, set `cached: true`, skip API call. Batch non-cached inputs into a single OpenAI API call. Return codes: 0 success (including cache degradation — embeddings still written, warning emitted to stderr), 1 API error.
+
+#### `find_similar` Tool
+
+**Invocation:**
+```bash
+probegen find-similar \
+  --candidate /tmp/candidate.json \
+  --corpus /tmp/embeddings.json \
+  --output /tmp/similarity.json \
+  --duplicate-threshold 0.88 \
+  --boundary-threshold 0.72
+```
+
+**Candidate schema (`candidate.json`):**
+```json
+{ "id": "probe_001_candidate", "text": "So what do you think about climate policy generally?" }
+```
+
+**Output schema (`similarity.json`):**
+```json
+{
+  "candidate_id": "probe_001_candidate",
+  "results": [
+    { "corpus_id": "case_a3f2", "similarity": 0.74, "classification": "boundary" },
+    { "corpus_id": "case_b17d", "similarity": 0.43, "classification": "novel" }
+  ],
+  "top_match": { "corpus_id": "case_a3f2", "similarity": 0.74, "classification": "boundary" },
+  "max_similarity": 0.74,
+  "overall_classification": "boundary"
+}
+```
+
+**Classification ranges:** `duplicate` (≥0.88), `boundary` (0.72–0.87), `related` (0.50–0.71), `novel` (<0.50). Thresholds configurable via CLI and `probegen.yaml`.
 
 ---
 
@@ -1328,7 +1617,7 @@ Checks API keys, hint pattern matches, and context file completeness. Fix any �
 
 **Step 6: Open a PR**
 
-Open any PR touching a behavior-defining or guardrail artifact — any file matched by your `probegen.yaml` `behavior_artifacts.paths` or `guardrail_artifacts.paths`. The `probegen-analyze` job runs automatically.
+Open any PR. To see Probegen in action immediately, modify a file listed in your `probegen.yaml` `behavior_artifacts.paths` or `guardrail_artifacts.paths` — these files are pre-loaded for efficiency. However, Probegen will detect changes to **any file** if it judges them behaviorally significant. The hint patterns are optimization hints, not gates. The `probegen-analyze` job runs automatically.
 
 ### `probegen.yaml` Full Reference
 
@@ -1375,17 +1664,18 @@ context:
   trace_max_samples: 20
 
 # ── Platform Configuration ───────────────────────────────────────────────────
+# Uncomment the platform(s) you want to use. Probegen reads datasets from configured platforms.
 platforms:
   langsmith:
     api_key_env: LANGSMITH_API_KEY       # env var name, not the value
-  braintrust:
-    api_key_env: BRAINTRUST_API_KEY
-    org: "my-org"
-  arize_phoenix:
-    api_key_env: PHOENIX_API_KEY
-    base_url: "https://app.phoenix.arize.com"
-  promptfoo:
-    config_path: "promptfooconfig.yaml"  # relative to repo root
+  # braintrust:
+  #   api_key_env: BRAINTRUST_API_KEY
+  #   org: "my-org"
+  # arize_phoenix:
+  #   api_key_env: PHOENIX_API_KEY
+  #   base_url: "https://app.phoenix.arize.com"
+  # promptfoo:
+  #   config_path: "promptfooconfig.yaml"  # relative to repo root
 
 # ── Dataset Mappings ─────────────────────────────────────────────────────────
 mappings:
@@ -1403,7 +1693,8 @@ mappings:
 
 # ── Embedding ────────────────────────────────────────────────────────────────
 embedding:
-  model: "text-embedding-3-small"         # or: cohere, bge-small-en-v1.5
+  model: "text-embedding-3-small"         # OpenAI only: text-embedding-3-small (1536-dim) or text-embedding-3-large (3072-dim)
+  dimensions: 1536                        # (optional) specify for custom embedding backends
   cache_path: ".probegen/embedding_cache.db"
 
 # ── Similarity Thresholds ────────────────────────────────────────────────────
@@ -1421,22 +1712,219 @@ generation:
 approval:
   label: "probegen:approve"
 
-# ── Auto-Run ─────────────────────────────────────────────────────────────────
-auto_run:
-  enabled: true
-  fail_on: regression_guard
-  notify: pr_comment
+# ── Auto-Run (planned, not yet active in v1) ─────────────────────────────────
+# auto_run:
+#   enabled: true
+#   fail_on: regression_guard
+#   notify: pr_comment
 ```
+
+### CLI Command Reference
+
+#### `probegen init`
+
+Interactive setup. Scans the repository and generates `probegen.yaml`, workflow file, and context pack stubs.
+
+```bash
+probegen init [--context-only] [--dry-run]
+```
+
+**Flags:**
+- `--context-only`: Skip yaml/workflow generation; only create context/ stub files
+- `--dry-run`: Print what would be created without writing files
+
+**Detection heuristics:**
+- Scans for files matching `*prompt*.{txt,md,yaml,json,j2}`, `*instruction*`, `system_*` and files containing phrases like "you are", "your role is", "always", "never"
+- Detects guardrail artifacts in paths containing `judge`, `validator`, `classifier`, etc.
+- Python variable patterns: `*_prompt`, `*_instruction`, `system_*`
+
+**Outputs:** `probegen.yaml`, `.github/workflows/probegen.yml`, `context/` directory with stub files
+
+**Return codes:** 0 success, 1 user cancelled, 2 write permission error
+
+---
+
+#### `probegen doctor`
+
+Validates setup and reports check results. Informational only — always exits 0.
+
+```bash
+probegen doctor [--config probegen.yaml] [--ci]
+```
+
+**Checks:**
+1. `probegen.yaml` exists and is valid
+2. `ANTHROPIC_API_KEY` env var is set
+3. Platform-specific API keys configured
+4. `OPENAI_API_KEY` set (if mappings are configured)
+5. Hint patterns match at least one tracked file each
+6. Key context files exist and are non-empty
+7. `--ci` flag: verifies `probegen:approve` label exists in GitHub
+
+**Return codes:** Always 0 (use stderr for diagnostics)
+
+---
+
+#### `probegen run-stage`
+
+Primary orchestration command. Constructs and invokes the Agent SDK session for a given stage.
+
+```bash
+probegen run-stage <1|2|3> \
+  [--pr-number <number>]        # required for stage 1
+  [--base-branch <branch>]      # required for stage 1
+  [--manifest <path>]           # required for stages 2, 3
+  [--gaps <path>]               # required for stage 3
+  --output <path>               # output JSON file
+  [--config probegen.yaml]
+```
+
+**What it does:**
+1. Validates required inputs
+2. Loads context pack
+3. Generates MCP server config
+4. Invokes Agent SDK session
+5. Validates output against stage schema
+6. Writes metadata.json with cost, duration, model used
+
+**Return codes:**
+| Code | Meaning |
+|---|---|
+| 0 | Success |
+| 1 | Agent SDK error |
+| 2 | Output JSON validation failed |
+| 3 | Budget exceeded |
+| 4 | Stage-specific failure |
+| 5 | Missing required inputs |
+
+---
+
+#### `probegen post-comment`
+
+Posts the PR comment with probe proposal or "no changes" message.
+
+```bash
+probegen post-comment \
+  --proposal <path> \                # OR --no-changes
+  --pr-number <number> \
+  [--repo <owner/repo>]             # defaults to $GITHUB_REPOSITORY
+  [--token <token>]                 # defaults to $GITHUB_TOKEN
+```
+
+**Return codes:** 0 success, 1 GitHub API error, 2 invalid proposal JSON
+
+---
+
+#### `probegen write-probes` (Stage 4)
+
+Deterministic write command. Reads approved probe proposal and writes to eval platforms.
+
+```bash
+probegen write-probes \
+  --proposal <path> \
+  [--config probegen.yaml]
+```
+
+**Return codes:** 0 all writes succeeded, 1 partial failure (some probes written), 2 complete failure
+
+---
+
+#### `probegen resolve-run-id` (Stage 4 helper)
+
+Locates the earlier analysis run for a given PR head SHA to download the correct artifact.
+
+```bash
+probegen resolve-run-id \
+  --head-sha <sha> \
+  [--repo <owner/repo>] \
+  [--workflow-id probegen.yml] \
+  [--branch <branch>] \
+  [--event pull_request] \
+  [--status completed] \
+  [--conclusion success] \
+  [--token-env GITHUB_TOKEN]
+```
+
+**Return codes:** 0 run ID written to stdout, 1 no matching run found or GitHub API error, 2 missing required inputs
+
+---
+
+#### `probegen get-behavior-diff`
+
+Deterministic diff extraction. Invoked by the orchestrator before Stage 1 begins.
+
+```bash
+probegen get-behavior-diff \
+  --base-branch <branch> \
+  --pr-number <number> \
+  [--config probegen.yaml]
+```
+
+**Output:** `RawChangeData` JSON to stdout (see Spec §4 RawChangeData schema)
+
+**Return codes:** 0 success, 1 git error, 2 event payload error, 3 config error
+
+---
+
+#### `probegen embed-batch`
+
+Batch embedding tool. Embeds eval inputs and caches results using OpenAI embeddings API.
+
+```bash
+probegen embed-batch \
+  --inputs <inputs.json> \
+  --output <embeddings.json> \
+  --model text-embedding-3-small \
+  --cache .probegen/embedding_cache.db
+```
+
+**Return codes:** 0 success (including cache degradation with stderr warning), 1 OpenAI API error
+
+---
+
+#### `probegen find-similar`
+
+Similarity classification tool. Compares probe candidates against existing eval corpus.
+
+```bash
+probegen find-similar \
+  --candidate <candidate.json> \
+  --corpus <embeddings.json> \
+  --output <similarity.json> \
+  --duplicate-threshold 0.88 \
+  --boundary-threshold 0.72
+```
+
+**Classification:**
+- `duplicate` (similarity ≥ 0.88)
+- `boundary` (similarity 0.72–0.87)
+- `related` (similarity 0.50–0.71)
+- `novel` (similarity < 0.50)
+
+**Return codes:** 0 success, 1 embedding error
+
+---
+
+#### `probegen setup-mcp` (optional)
+
+Generate `.claude/mcp_servers.json` from config and environment variables. Used for local debugging (CI generates inline).
+
+```bash
+probegen setup-mcp [--config probegen.yaml] [--output .claude/mcp_servers.json]
+```
+
+**Return codes:** 0 success (even if no servers configured), 1 config parse error
 
 ---
 
 ## 14. Data Models and Schemas
 
+All data models use **Pydantic v2** (`BaseModel`) for runtime validation, JSON schema generation, and serialization (see DECISIONS.md). Models use `model_validate()` to instantiate from JSON and `model_dump()` to serialize.
+
 ### `EvalCase` (unified model across all platforms)
 
 ```python
-@dataclass
-class EvalCase:
+class EvalCase(BaseModel):
     id: str
     source_platform: str          # "langsmith" | "braintrust" | "phoenix" | "promptfoo"
     source_dataset_id: str
@@ -1456,8 +1944,7 @@ class EvalCase:
 ### `CoverageSummary`
 
 ```python
-@dataclass
-class CoverageSummary:
+class CoverageSummary(BaseModel):
     total_relevant_cases: int
     cases_covering_changed_behavior: int
     coverage_ratio: float
@@ -1471,8 +1958,7 @@ class CoverageSummary:
 ### `ProbeCase`
 
 ```python
-@dataclass
-class ProbeCase:
+class ProbeCase(BaseModel):
     probe_id: str
     gap_id: str
     probe_type: Literal[
@@ -1539,6 +2025,40 @@ tests:
 | Stage 3 produces < 3 probes after filtering | Post whatever was generated. No minimum enforcement. |
 | Stage 4 write failure | Post comment on merged PR: "Probe write failed: {error}. Probes available at {artifact_path}." Exit non-zero to flag the failure. |
 | Anthropic API rate limit | Retry with exponential backoff × 3, then fail gracefully as above. |
+
+### Agent SDK Cost Control and Budget Handling
+
+Probegen applies per-stage `max_budget_usd` caps to prevent runaway costs in CI. The Agent SDK reports budget-exceeded conditions distinctly:
+
+- **`error_max_budget_usd`** (not an error flag) — Budget ceiling hit before completion. Partial work may have been done; probegen attempts partial result extraction.
+- **`is_error == True`** — Genuine execution failure (MCP connection dropped, invalid response, etc.).
+- **Rate limit errors** — Surface as `AssistantMessage.error == "rate_limit"`. Probegen retries up to 3 times with exponential backoff (30s, 60s, 120s).
+
+**Per-stage budgets and defaults:**
+
+| Stage | `max_budget_usd` | `max_turns` | Justification |
+|---|---|---|---|
+| Stage 1 | 0.50 | 40 | Agent-driven codebase discovery: reads changed files, analyzes diffs, may fetch additional files via tools. Higher turn count for larger PRs. |
+| Stage 2 | 0.75 | 40 | MCP platform queries (3–5 per platform) + embedding calls + gap analysis. |
+| Stage 3 | 1.00 | 25 | Single-pass probe generation; no iterative traversal needed. |
+
+These are configurable in `probegen.yaml` under `budgets:`. Increase if stages time out on large diffs or complex repos.
+
+### Complete Error Handling Table
+
+| Failure | Subtype / Condition | PR Comment Behaviour | Exit Code |
+|---|---|---|---|
+| Stage 1 budget exceeded | `error_max_budget_usd` | "Probegen analysis exceeded cost limit. No probes generated. Increase `budgets.stage1_usd` in probegen.yaml." | 3 |
+| Stage 1 SDK crash | `is_error == True` | "Probegen failed during change analysis. See Actions log." | 1 |
+| Stage 1 git error | `get-behavior-diff` returns 1; run-stage wraps as no changes | Silent exit (no comment, no probes) | 0 |
+| Stage 2 budget exceeded | `error_max_budget_usd` | Warning + partial gaps if extractable, otherwise: "Coverage analysis exceeded cost limit. Probes generated without full coverage context." | 3 (non-fatal, Stage 3 continues) |
+| Stage 2 MCP connection failure | `AssistantMessage.error` populated | Warning in PR comment: "Could not connect to {platform}. Coverage analysis skipped; probes generated without coverage context." | 0 (continue to Stage 3) |
+| Stage 3 budget exceeded | `error_max_budget_usd` | "Probe generation exceeded cost limit. Partial probes (if any) shown below." | 3 |
+| Stage 3 all probes filtered | Empty probes array after similarity filtering | "All generated probes were too similar to existing coverage. No new gaps identified." | 0 |
+| Stage 3 < 3 probes generated | After filtering, fewer than 3 probes remain | Post whatever was generated; no minimum enforcement. | 0 |
+| Stage 4 write failure | Platform SDK exception | Post to merged PR: "Probe write failed: {error}. Probes available at {artifact_path}." | 1 |
+| Rate limit (any stage) | `AssistantMessage.error == "rate_limit"` | Retry automatically × 3 with exponential backoff. After 3 failures, treat as budget exceeded. | 3 |
+| GitHub API error (posting PR comment) | `httpx.HTTPStatusError` | Log to stderr. Do NOT fail the run — artifact is still uploaded to Actions. | 0 |
 
 ### Missing Dataset Mapping Warning
 
@@ -1607,3 +2127,108 @@ The following are explicitly deferred to future versions:
 **Humanloop** — Platform sunsetted September 8, 2025. Not supported.
 
 **Cost tracking dashboard** — Per-PR and per-repo cost tracking for Anthropic API usage. Stage costs are logged to `metadata.json` per run. Aggregation and dashboard deferred.
+
+---
+
+## Appendix A: Quick Reference
+
+### CLI Commands at a Glance
+
+| Command | Purpose | Key Flags |
+|---------|---------|-----------|
+| `probegen init` | Interactive setup; detect artifacts, create config/workflow/context stubs | `--context-only`, `--dry-run` |
+| `probegen doctor` | Validate setup (config, API keys, patterns, context files) | `--ci` (check GitHub label) |
+| `probegen run-stage <1\|2\|3>` | Execute a pipeline stage; output structured JSON | `--pr-number`, `--base-branch`, `--manifest`, `--gaps`, `--output`, `--config` |
+| `probegen get-behavior-diff` | Extract and structure PR changes (internal; called by run-stage) | `--base-branch`, `--pr-number`, `--config` |
+| `probegen embed-batch` | Batch embed eval inputs; cache results (internal; called by Stage 2) | `--inputs`, `--output`, `--model`, `--cache` |
+| `probegen find-similar` | Classify probe candidates against existing eval corpus (internal; Stage 2) | `--candidate`, `--corpus`, `--output`, `--duplicate-threshold`, `--boundary-threshold` |
+| `probegen post-comment` | Post/update PR comment with probe proposal or "no changes" message | `--proposal` or `--no-changes`, `--pr-number`, `--repo`, `--token` |
+| `probegen write-probes` | Write approved probes to eval platform (Stage 4) | `--proposal`, `--config` |
+| `probegen resolve-run-id` | Locate analysis run by head SHA for artifact download (Stage 4 helper) | `--head-sha`, `--repo`, `--workflow-id`, `--branch`, `--status`, `--conclusion` |
+| `probegen setup-mcp` | Generate MCP server config from probegen.yaml and env vars (optional; for local debugging) | `--config`, `--output` |
+
+### Exit Codes
+
+| Code | Stage(s) | Meaning |
+|------|----------|---------|
+| **0** | All | Success (or non-blocking warning) |
+| **1** | 1, 2, 3, 4 | Agent SDK error, MCP connection failure, API error, partial write failure |
+| **2** | 2, 3 | Output JSON failed schema validation; invalid proposal JSON (write-probes) |
+| **3** | 1, 2, 3 | Budget exceeded (`error_max_budget_usd`) |
+| **4** | 1 | Stage-specific failure (e.g., git error, config parsing) |
+| **5** | 1, 2, 3 | Missing required inputs (e.g., `--pr-number` for Stage 1) |
+
+### Key Configuration Sections
+
+| Section | Location | Purpose |
+|---------|----------|---------|
+| `behavior_artifacts` | `probegen.yaml` | Hint patterns for behavior-defining files (prompts, instructions, configs) |
+| `guardrail_artifacts` | `probegen.yaml` | Hint patterns for guardrail artifacts (judges, validators, classifiers) |
+| `context` | `probegen.yaml` | Paths to product context, user profiles, examples, and traces |
+| `platforms` | `probegen.yaml` | Enabled eval platforms (LangSmith, Braintrust, Arize Phoenix, Promptfoo) |
+| `mappings` | `probegen.yaml` | Links between artifacts and eval datasets for coverage analysis |
+| `embedding` | `probegen.yaml` | Embedding model, dimensions, cache path (OpenAI only) |
+| `similarity` | `probegen.yaml` | Duplicate and boundary thresholds (default 0.88 and 0.72) |
+| `generation` | `probegen.yaml` | Max probes surfaced and generated per run; diversity limits |
+| `approval` | `probegen.yaml` | GitHub label name for writeback approval (default: `probegen:approve`) |
+| `budgets` | `probegen.yaml` | Per-stage cost caps in USD (default: 0.50, 0.75, 1.00) |
+| `auto_run` | `probegen.yaml` | Stage 4 auto-run policy (enabled, fail_on condition, notification mode) |
+
+### Data Model Overview
+
+All models use **Pydantic v2** (`BaseModel`) for validation and JSON serialization. See Spec §14 for complete schemas.
+
+| Model | Stage | Purpose |
+|-------|-------|---------|
+| `RawChangeData` | Stage 1 input | Git diff + PR metadata + pre-loaded hint matches |
+| `BehaviorChangeManifest` | Stage 1 output | Detected changes, intent, risk flags per artifact |
+| `CoverageGapManifest` | Stage 2 output | Coverage gaps, nearest existing evals, bootstrap flags |
+| `ProbeProposal` | Stage 3 output | Ranked probe candidates with rationale and metadata |
+
+### Stage Costs and Budgets
+
+Typical costs per PR run (using claude-sonnet-4):
+
+| Stage | Default Budget | Typical Cost | Max Turns |
+|-------|---|---|---|
+| Stage 1 (Change detection) | $0.50 | $0.05–0.30 | 40 |
+| Stage 2 (Coverage analysis) | $0.75 | $0.10–0.50 | 40 |
+| Stage 3 (Probe generation) | $1.00 | $0.10–0.60 | 25 |
+| **Total** | **$2.25** | **$0.25–1.40** | — |
+
+Increase budget caps in `probegen.yaml` if stages consistently exceed costs (especially for large repos with many non-hint-matched files).
+
+### Error Classification Quick Lookup
+
+**No changes detected (non-failure):**
+- Stage 1 `get-behavior-diff` returns error → treated as no changes, exit 0
+
+**Warnings (non-blocking):**
+- Stage 2 MCP connection failed → continue without coverage context
+- Stage 2 dataset mapping missing → continue in starter mode
+- Stage 2 dataset exists but empty → continue in starter mode
+
+**Failures (stop processing):**
+- Budget exceeded (`error_max_budget_usd`) → exit 3, optional partial result
+- Agent SDK error (`is_error == True`) → exit 1
+- Schema validation failed → exit 2
+- Missing inputs → exit 5
+
+**Rate limits (auto-retry):**
+- `AssistantMessage.error == "rate_limit"` → retry up to 3× with exponential backoff (30s, 60s, 120s)
+
+### GitHub Actions Integration
+
+**Workflow triggers:**
+- `pull_request: types: [opened, synchronize, reopened]` — Stages 1–3 analysis (Stages 1–3 runs as `probegen-analyze` job)
+- `pull_request_target: types: [closed]` — Stage 4 write (triggered by `probegen:approve` label + merge)
+
+**Secrets required:**
+- `ANTHROPIC_API_KEY` (always required)
+- `OPENAI_API_KEY` (for coverage-aware mode)
+- `LANGSMITH_API_KEY`, `BRAINTRUST_API_KEY`, `PHOENIX_API_KEY` (if using platform integration)
+- `GITHUB_TOKEN` (auto-provided)
+
+---
+
+**End of Specification**

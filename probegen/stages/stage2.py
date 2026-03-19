@@ -46,7 +46,8 @@ def run_stage2(
     )
 
     options = ClaudeAgentOptions(
-        allowed_tools=[],  # empty = all tools permitted, including MCP server tools
+        allowed_tools=[],  # empty = all tools permitted, including MCP servers and Bash.
+                           # Stage 2 needs both Bash (for embed_batch, find_similar) and MCP (for platform queries).
         mcp_servers=mcp_servers or {},
         max_turns=40,
         max_budget_usd=config.budgets.stage2_usd,

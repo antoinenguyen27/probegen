@@ -81,7 +81,7 @@ mappings:
 embedding:
   model: "text-embedding-3-small"
   cache_path: ".probegen/embedding_cache.db"
-  dimensions:
+  # dimensions: 1536  # optional; use only if configuring a custom embedding backend
 
 similarity:
   duplicate_threshold: 0.88
@@ -95,10 +95,13 @@ generation:
 approval:
   label: "probegen:approve"
 
-auto_run:
-  enabled: true
-  fail_on: "regression_guard"
-  notify: "pr_comment"
+# ── Auto-Run (planned, not yet active in v1) ───────────────────
+# Auto-run will trigger a scoped eval run after probe writeback and
+# post results back to the merged PR. Not yet implemented.
+# auto_run:
+#   enabled: true
+#   fail_on: "regression_guard"
+#   notify: "pr_comment"
 
 # ── Cost Control ───────────────────────────────────────────────
 # Maximum Anthropic API spend per stage per PR run.

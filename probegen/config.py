@@ -101,6 +101,8 @@ class ApprovalConfig(ProbegenModel):
 
 
 class AutoRunConfig(ProbegenModel):
+    # Reserved for v2: auto_run config is parsed and stored but not yet executed.
+    # The auto-run pipeline (platform-specific eval triggers + results post-back) is planned.
     enabled: bool = True
     fail_on: str | None = "regression_guard"
     notify: str | None = "pr_comment"

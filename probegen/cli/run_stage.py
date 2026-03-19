@@ -11,6 +11,8 @@ from probegen.cli.setup_mcp import generate_mcp_config
 from probegen.config import ProbegenConfig
 from probegen.context import count_tokens, load_context_pack
 from probegen.errors import BudgetExceededError, ConfigError, GitDiffError, SchemaValidationError, StageError
+from probegen.export import write_run_artifacts
+from probegen.models import BehaviorChangeManifest, CoverageGapManifest
 from probegen.stages._common import build_metadata
 from probegen.stages.stage1 import run_stage1
 from probegen.stages.stage2 import run_stage2
@@ -119,6 +121,21 @@ def run_stage_command(
                 f"probes={result.data.probe_count}",
                 err=True,
             )
+            commit_sha = manifest.get("commit_sha", "unknown")
+            run_dir = output_path.parent / "runs" / commit_sha
+            try:
+                artifact_paths = write_run_artifacts(
+                    run_dir=run_dir,
+                    stage1_manifest=BehaviorChangeManifest.model_validate(manifest),
+                    stage2_manifest=CoverageGapManifest.model_validate(gaps),
+                    proposal=result.data,
+                    metadata=metadata,
+                )
+                result.data.export_formats.promptfoo = str(artifact_paths["test_file"])
+                result.data.export_formats.deepeval = str(artifact_paths["deepeval"])
+                result.data.export_formats.raw_json = str(artifact_paths["proposal"])
+            except Exception as exc:
+                click.echo(f"[probegen] warning: run artifact export failed: {exc}", err=True)
     except BudgetExceededError as exc:
         if exc.partial_result is not None:
             _write_json(output_path, exc.partial_result)
