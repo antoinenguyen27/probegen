@@ -62,7 +62,7 @@ This creates a private copy with all the example files — no need to clone the 
 ## Step 2: Install dependencies and set up environment
 
 ```bash
-python -m venv .venv
+python -m venv .venv 
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env

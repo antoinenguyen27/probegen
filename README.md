@@ -1,6 +1,6 @@
 # Parity
 
-[![PyPI](https://img.shields.io/pypi/v/parity)](https://pypi.org/project/parity/)
+[![PyPI](https://img.shields.io/pypi/v/parity-ai)](https://pypi.org/project/parity-ai/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/downloads/)
 
@@ -25,7 +25,7 @@ No evals yet? Parity starts from zero. It generates starter evals from your diff
 ## Quick start
 
 ```bash
-pip install parity
+pip install parity-ai
 parity init
 ```
 

@@ -201,7 +201,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install parity
+          pip install parity-ai
           npm install -g @anthropic-ai/claude-code
 
       - name: Stage 1 — Change Detection
@@ -287,7 +287,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - run: pip install parity
+      - run: pip install parity-ai
 
       - name: Resolve analysis run
         id: resolve
