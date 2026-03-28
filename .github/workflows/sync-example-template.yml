@@ -1,0 +1,38 @@
+name: Sync example to template repo
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "examples/langgraph-agentic-rag/**"
+
+jobs:
+  sync:
+    name: Sync to parity-langgraph-example
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clone template repo
+        run: |
+          git clone https://x-access-token:${{ secrets.TEMPLATE_REPO_TOKEN }}@github.com/antoinenguyen27/parity-langgraph-example.git /tmp/template
+
+      - name: Sync files
+        run: |
+          # Remove all tracked files in template (except .git)
+          find /tmp/template -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
+          # Copy current example contents
+          cp -R examples/langgraph-agentic-rag/* examples/langgraph-agentic-rag/.* /tmp/template/ 2>/dev/null || true
+
+      - name: Commit and push if changed
+        run: |
+          cd /tmp/template
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to sync"
+          else
+            git commit -m "Sync from antoinenguyen27/parity examples/langgraph-agentic-rag"
+            git push
+          fi

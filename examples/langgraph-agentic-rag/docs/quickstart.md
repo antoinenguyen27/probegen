@@ -48,18 +48,14 @@ The change sounds entirely reasonable — citations improve transparency. The no
 
 ## Step 1: Create your own GitHub repository from this example
 
-Parity runs as a GitHub Actions workflow, so the demo needs to live in its own repo. Pull the example into a fresh
-directory with `degit` (no need to clone the full Parity repo):
+Parity runs as a GitHub Actions workflow, so the demo needs to live in its own repo. Create one from the template:
 
 ```bash
-npx degit antoinenguyen27/parity/examples/langgraph-agentic-rag lilian-weng-rag-demo
-cd lilian-weng-rag-demo
-git init
-git add .
-git commit -m "Initial LangGraph agentic RAG demo"
-gh repo create lilian-weng-rag-parity-demo --private --source=. --push
+gh repo create my-rag-demo --template antoinenguyen27/parity-langgraph-example --clone --private
+cd my-rag-demo
+```
 
-If you are reading this from inside a repo you already copied, skip this step.
+This creates a private copy with all the example files — no need to clone the full Parity repository.
 
 ---
 
