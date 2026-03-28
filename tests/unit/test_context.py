@@ -3,8 +3,8 @@ from __future__ import annotations
 import random
 from pathlib import Path
 
-from probegen.config import ProbegenConfig
-from probegen.context import (
+from parity.config import ParityConfig
+from parity.context import (
     ContextPack,
     count_tokens,
     load_context_pack,
@@ -26,9 +26,9 @@ def test_truncate_text_applies_marker_when_needed() -> None:
 
 
 def test_load_context_pack_warns_but_returns_empty_sections(tmp_path: Path) -> None:
-    config_path = tmp_path / "probegen.yaml"
+    config_path = tmp_path / "parity.yaml"
     config_path.write_text("version: 1\n", encoding="utf-8")
-    config = ProbegenConfig.load(config_path)
+    config = ParityConfig.load(config_path)
 
     pack = load_context_pack(config, repo_root=tmp_path, emit_warnings=False)
 

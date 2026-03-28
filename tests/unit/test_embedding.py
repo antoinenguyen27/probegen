@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from probegen.tools.embedding import EmbeddingCache, embed_batch
+from parity.tools.embedding import EmbeddingCache, embed_batch
 
 
 class _FakeEmbeddingRecord:

@@ -1,0 +1,246 @@
+name: Parity
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  pull_request_target:
+    types: [closed]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: write
+
+jobs:
+  parity-analyze:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        run: |
+          pip install parity
+          npm install -g @anthropic-ai/claude-code
+
+      - name: Stage 1 - Change Detection
+        id: stage1
+        run: |
+          echo "::group::Stage 1 — Change Detection (agent running)"
+          parity run-stage 1 \
+            --pr-number ${{ github.event.pull_request.number }} \
+            --base-branch ${{ github.event.pull_request.base.ref }} \
+            --output .parity/stage1.json
+          echo "::endgroup::"
+          if [ -f .parity/metadata.json ]; then
+            python3 - <<'PYEOF'
+          import json
+          try:
+              m = json.load(open(".parity/metadata.json"))
+              cost = f"${m['cost_usd']:.4f}" if m.get("cost_usd") is not None else "n/a"
+              print(
+                  f"::notice::Stage 1 — model={m.get('model','n/a')} "
+                  f"cost={cost} duration={m.get('duration_ms','n/a')}ms "
+                  f"turns={m.get('num_turns','n/a')} prompt_tokens={m.get('prompt_tokens','n/a')}"
+              )
+          except Exception as e:
+              print(f"::warning::Could not read Stage 1 metadata: {e}")
+          PYEOF
+          fi
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
+
+      - name: Check gate
+        id: gate
+        run: |
+          has_changes=$(python3 -c "
+          import json
+          manifest = json.load(open('.parity/stage1.json'))
+          print('true' if manifest.get('has_changes') else 'false')
+          ")
+          echo "has_changes=$has_changes" >> $GITHUB_OUTPUT
+          if [ "$has_changes" = "true" ]; then
+            echo "::notice::Gate OPEN — behavioral artifact changes detected, proceeding to Stage 2 & 3"
+          else
+            echo "::notice::Gate CLOSED — no behavioral artifact changes, skipping Stage 2 & 3"
+          fi
+
+      - name: Stage 2 - Coverage Analysis
+        id: stage2
+        if: steps.gate.outputs.has_changes == 'true'
+        run: |
+          echo "::group::Stage 2 — Coverage Analysis (agent running)"
+          parity run-stage 2 \
+            --manifest .parity/stage1.json \
+            --output .parity/stage2.json
+          echo "::endgroup::"
+          if [ -f .parity/metadata.json ]; then
+            python3 - <<'PYEOF'
+          import json
+          try:
+              m = json.load(open(".parity/metadata.json"))
+              cost = f"${m['cost_usd']:.4f}" if m.get("cost_usd") is not None else "n/a"
+              print(
+                  f"::notice::Stage 2 — model={m.get('model','n/a')} "
+                  f"cost={cost} duration={m.get('duration_ms','n/a')}ms "
+                  f"turns={m.get('num_turns','n/a')} prompt_tokens={m.get('prompt_tokens','n/a')}"
+              )
+          except Exception as e:
+              print(f"::warning::Could not read Stage 2 metadata: {e}")
+          PYEOF
+          fi
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
+
+      - name: Stage 3 - Probe Generation
+        id: stage3
+        if: steps.gate.outputs.has_changes == 'true'
+        run: |
+          echo "::group::Stage 3 — Probe Generation (agent running)"
+          parity run-stage 3 \
+            --manifest .parity/stage1.json \
+            --gaps .parity/stage2.json \
+            --output .parity/stage3.json
+          echo "::endgroup::"
+          if [ -f .parity/metadata.json ]; then
+            python3 - <<'PYEOF'
+          import json
+          try:
+              m = json.load(open(".parity/metadata.json"))
+              s3 = json.load(open(".parity/stage3.json")) if __import__("pathlib").Path(".parity/stage3.json").exists() else {}
+              cost = f"${m['cost_usd']:.4f}" if m.get("cost_usd") is not None else "n/a"
+              probes = s3.get("probe_count", "n/a")
+              print(
+                  f"::notice::Stage 3 — model={m.get('model','n/a')} "
+                  f"cost={cost} duration={m.get('duration_ms','n/a')}ms "
+                  f"turns={m.get('num_turns','n/a')} probes_generated={probes}"
+              )
+          except Exception as e:
+              print(f"::warning::Could not read Stage 3 metadata: {e}")
+          PYEOF
+          fi
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - name: Post PR comment (no changes)
+        if: steps.gate.outputs.has_changes == 'false'
+        run: parity post-comment --no-changes --pr-number ${{ github.event.pull_request.number }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Post PR comment (probes)
+        if: steps.gate.outputs.has_changes == 'true'
+        run: |
+          parity post-comment \
+            --proposal .parity/stage3.json \
+            --pr-number ${{ github.event.pull_request.number }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Job summary
+        if: always()
+        run: |
+          python3 - <<'PYEOF'
+          import json, os, pathlib
+
+          def load(path):
+              p = pathlib.Path(path)
+              return json.loads(p.read_text()) if p.exists() else {}
+
+          s1 = load(".parity/stage1.json")
+          s3 = load(".parity/stage3.json")
+
+          pr = "${{ github.event.pull_request.number }}"
+          sha = "${{ github.event.pull_request.head.sha }}"[:7]
+          artifacts = len(s1.get("hint_matched_artifacts", []))
+          has_changes = s1.get("has_changes", False)
+          probes = s3.get("probe_count", 0) if has_changes else 0
+
+          lines = [
+              "## Parity Run Summary",
+              "",
+              "| Field | Value |",
+              "|-------|-------|",
+              f"| PR | #{pr} |",
+              f"| SHA | `{sha}` |",
+              f"| Behavioral artifacts changed | {artifacts} |",
+              f"| Probes generated | {probes} |",
+          ]
+
+          summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary_path:
+              with open(summary_path, "a") as f:
+                  f.write("\n".join(lines) + "\n")
+          PYEOF
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: parity-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+          path: .parity/
+          retention-days: 90
+
+  parity-write:
+    if: |
+      github.event_name == 'pull_request_target' &&
+      github.event.pull_request.merged == true &&
+      contains(github.event.pull_request.labels.*.name, 'parity:approve')
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install parity
+
+      - name: Resolve analysis run
+        id: resolve
+        run: |
+          run_id=$(parity resolve-run-id \
+            --repo ${{ github.repository }} \
+            --workflow-id parity.yml \
+            --head-sha ${{ github.event.pull_request.head.sha }})
+          echo "run_id=$run_id" >> $GITHUB_OUTPUT
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download probe proposal
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ steps.resolve.outputs.run_id }}
+          name: parity-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+          path: .parity/
+
+      - name: Write probes to LangSmith
+        run: |
+          parity write-probes \
+            --proposal .parity/stage3.json \
+            --config parity.yaml
+        env:
+          LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_RUN_ID: ${{ github.run_id }}

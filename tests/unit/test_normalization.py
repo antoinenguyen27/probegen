@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from probegen.models.eval_case import normalize_input
+from parity.models.eval_case import normalize_input
 
 
 def test_normalize_input_string() -> None:

@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import pytest
 from pydantic import ValidationError
 
-from probegen.models import (
+from parity.models import (
     BehaviorChangeManifest,
     CoverageGapManifest,
     EvalCase,

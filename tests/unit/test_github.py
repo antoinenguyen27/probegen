@@ -3,9 +3,9 @@ from __future__ import annotations
 import httpx
 import respx
 
-from probegen.github import (
+from parity.github import (
     GITHUB_API_VERSION,
-    PROBEGEN_COMMENT_MARKER,
+    PARITY_COMMENT_MARKER,
     find_existing_comment,
     find_latest_workflow_run_id,
     post_pr_comment,
@@ -46,7 +46,7 @@ def test_find_existing_comment_returns_marker_match() -> None:
             200,
             json=[
                 {"id": 1, "body": "unrelated"},
-                {"id": 2, "body": f"{PROBEGEN_COMMENT_MARKER}\ncomment"},
+                {"id": 2, "body": f"{PARITY_COMMENT_MARKER}\ncomment"},
             ],
         )
     )
@@ -59,7 +59,7 @@ def test_find_existing_comment_returns_marker_match() -> None:
 
 @respx.mock
 def test_find_latest_workflow_run_id_filters_to_successful_run() -> None:
-    route = respx.get("https://api.github.com/repos/org/repo/actions/workflows/probegen.yml/runs").mock(
+    route = respx.get("https://api.github.com/repos/org/repo/actions/workflows/parity.yml/runs").mock(
         return_value=httpx.Response(
             200,
             json={
@@ -73,7 +73,7 @@ def test_find_latest_workflow_run_id_filters_to_successful_run() -> None:
 
     run_id = find_latest_workflow_run_id(
         "org/repo",
-        "probegen.yml",
+        "parity.yml",
         "token",
         event="pull_request",
         status="completed",
@@ -90,7 +90,7 @@ def test_find_latest_workflow_run_id_filters_to_successful_run() -> None:
 
 @respx.mock
 def test_find_latest_workflow_run_id_returns_none_when_no_match() -> None:
-    respx.get("https://api.github.com/repos/org/repo/actions/workflows/probegen.yml/runs").mock(
+    respx.get("https://api.github.com/repos/org/repo/actions/workflows/parity.yml/runs").mock(
         return_value=httpx.Response(
             200,
             json={"workflow_runs": [{"id": 41, "conclusion": "failure"}]},
@@ -99,7 +99,7 @@ def test_find_latest_workflow_run_id_returns_none_when_no_match() -> None:
 
     run_id = find_latest_workflow_run_id(
         "org/repo",
-        "probegen.yml",
+        "parity.yml",
         "token",
         event="pull_request",
         status="completed",

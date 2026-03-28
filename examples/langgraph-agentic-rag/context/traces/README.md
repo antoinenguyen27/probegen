@@ -1,6 +1,6 @@
 # Demo Traces
 
-These synthetic traces show real conversation patterns for the Acme support assistant. Probegen reads them to understand the agent's natural interaction style — the tone, citation format, and routing behavior that represents correct behavior before any patch is applied.
+These synthetic traces show real conversation patterns for the Acme support assistant. Parity reads them to understand the agent's natural interaction style — the tone, citation format, and routing behavior that represents correct behavior before any patch is applied.
 
 ## trace_01.txt
 
@@ -24,4 +24,4 @@ Both turns retrieve and cite `[account_security.md]`. This trace shows that mult
 
 ---
 
-In a real repository, keep only anonymized traces here. Traces are optional — Probegen falls back gracefully if the directory is empty or absent.
+In a real repository, keep only anonymized traces here. Traces are optional — Parity falls back gracefully if the directory is empty or absent.

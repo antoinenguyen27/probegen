@@ -6,14 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from probegen.cli.get_behavior_diff import (
+from parity.cli.get_behavior_diff import (
     _artifact_class,
     _classify_artifact_path,
     _matches_hint_patterns,
     _read_event_payload,
 )
-from probegen.config import ArtifactDetectionConfig, ProbegenConfig
-from probegen.errors import EventPayloadError
+from parity.config import ArtifactDetectionConfig, ParityConfig
+from parity.errors import EventPayloadError
 
 
 def _config(
@@ -21,8 +21,8 @@ def _config(
     behavior_paths: list[str] | None = None,
     guardrail_paths: list[str] | None = None,
     behavior_exclude: list[str] | None = None,
-) -> ProbegenConfig:
-    return ProbegenConfig(
+) -> ParityConfig:
+    return ParityConfig(
         behavior_artifacts=ArtifactDetectionConfig(
             paths=behavior_paths or [],
             exclude=behavior_exclude or [],

@@ -26,8 +26,8 @@ def test_get_behavior_diff_against_real_git_repo(tmp_path: Path) -> None:
     repo.mkdir()
 
     _git(repo, "init", "-b", "main")
-    _git(repo, "config", "user.name", "Probegen Test")
-    _git(repo, "config", "user.email", "probegen@example.com")
+    _git(repo, "config", "user.name", "Parity Test")
+    _git(repo, "config", "user.email", "parity@example.com")
 
     prompts_dir = repo / "prompts" / "citation_agent"
     prompts_dir.mkdir(parents=True)
@@ -39,7 +39,7 @@ def test_get_behavior_diff_against_real_git_repo(tmp_path: Path) -> None:
     other_path.parent.mkdir(parents=True)
     other_path.write_text('SYSTEM_PROMPT = "You are a helper."\n', encoding="utf-8")
 
-    config_path = repo / "probegen.yaml"
+    config_path = repo / "parity.yaml"
     config_path.write_text(
         """
 version: 1
@@ -93,7 +93,7 @@ guardrail_artifacts:
         [
             sys.executable,
             "-m",
-            "probegen.cli.get_behavior_diff",
+            "parity.cli.get_behavior_diff",
             "--base-branch",
             "main",
             "--pr-number",

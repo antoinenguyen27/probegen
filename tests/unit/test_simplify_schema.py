@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from probegen.stages._common import simplify_schema
+from parity.stages._common import simplify_schema
 
 
 def test_strips_unsupported_keywords() -> None:
@@ -179,8 +179,8 @@ def test_remove_keys_without_required_does_not_raise() -> None:
 
 def test_smoke_behavior_change_manifest_schema() -> None:
     """Real Pydantic schema for BehaviorChangeManifest survives simplification with inject keys removed."""
-    from probegen.models import BehaviorChangeManifest
-    from probegen.stages.stage1 import _STAGE1_INJECT_KEYS
+    from parity.models import BehaviorChangeManifest
+    from parity.stages.stage1 import _STAGE1_INJECT_KEYS
 
     raw_schema = BehaviorChangeManifest.model_json_schema()
     result = simplify_schema(raw_schema, remove_keys=_STAGE1_INJECT_KEYS)

@@ -1,11 +1,11 @@
-# Quickstart: Probegen End-to-End Demo with LangGraph Agentic RAG
+# Quickstart: Parity End-to-End Demo with LangGraph Agentic RAG
 
-This quickstart walks you through a complete Probegen workflow using a real LangGraph app as the target. By the end you will have:
+This quickstart walks you through a complete Parity workflow using a real LangGraph app as the target. By the end you will have:
 
 1. A working agentic RAG app running locally
 2. A seeded LangSmith baseline eval dataset
 3. A PR that introduces a single prompt addition with a non-obvious risk
-4. Probegen's Stage 1–3 artifacts: detected changes, coverage gaps, and proposed probes
+4. Parity's Stage 1–3 artifacts: detected changes, coverage gaps, and proposed probes
 5. Probes written back to LangSmith after merge approval
 
 The LangGraph app is a close implementation of the [LangGraph agentic RAG reference pattern](https://langchain-ai.github.io/langgraph/tutorials/rag/langgraph_agentic_rag/): an agent that retrieves from Lilian Weng's ML research blog posts, grades document relevance, rewrites queries when retrieval misses, and generates grounded answers.
@@ -14,24 +14,24 @@ The LangGraph app is a close implementation of the [LangGraph agentic RAG refere
 
 ## How this demo is structured
 
-The app has one file that matters to Probegen: `app/graph.py`. All agent behavior is defined there as inline Python string constants (`GRADE_PROMPT`, `REWRITE_PROMPT`, `GENERATE_PROMPT`) and as node functions. There are no separate prompt files — this is intentional. It lets Probegen demonstrate that it detects behavioral changes in Python constants, not just in dedicated prompt files.
+The app has one file that matters to Parity: `app/graph.py`. All agent behavior is defined there as inline Python string constants (`GRADE_PROMPT`, `REWRITE_PROMPT`, `GENERATE_PROMPT`) and as node functions. There are no separate prompt files — this is intentional. It lets Parity demonstrate that it detects behavioral changes in Python constants, not just in dedicated prompt files.
 
-### About the `probegen.yaml` configuration
+### About the `parity.yaml` configuration
 
-The `probegen.yaml` file in this demo defines **hint patterns** that guide Probegen's discovery:
+The `parity.yaml` file in this demo defines **hint patterns** that guide Parity's discovery:
 
-- **`behavior_artifacts.paths: ["app/**"]`** — tells Probegen to pre-load files in the `app/` directory for efficiency
+- **`behavior_artifacts.paths: ["app/**"]`** — tells Parity to pre-load files in the `app/` directory for efficiency
 - **`python_patterns`** — hints that the agent should look for Python module-level constants with these naming patterns
 
 **Important:** These patterns are *discovery hints*, not filters. The Stage 1 agent always sees **all changed files** in the PR and can inspect any of them using the Read and Bash tools. Files matching the configured patterns are pre-loaded with before/after content and diffs to optimize performance. Files that don't match are still visible to the agent — it just needs to fetch them on-demand.
 
-In this demo, the changes happen to be in `app/graph.py`, which matches the configured pattern, so they're pre-loaded. But if you modified a file outside `app/` with behavioral significance, Probegen's agent would still detect it.
+In this demo, the changes happen to be in `app/graph.py`, which matches the configured pattern, so they're pre-loaded. But if you modified a file outside `app/` with behavioral significance, Parity's agent would still detect it.
 
 The demo patch (`changes/always_cite.patch`) modifies one constant:
 
 - **`GENERATE_PROMPT`**: adds two sentences requiring the generator to cite the source blog post for each claim, and to avoid fabricating a source when the origin cannot be determined
 
-The change sounds entirely reasonable — citations improve transparency. The non-obvious risk is that `retrieve_blog_posts` returns raw `page_content` only, with no source metadata. The model must infer which blog post a chunk came from based on text alone, and may fabricate or misattribute citations when chunks are ambiguous. Probegen's Stage 1 flags this gap. Stage 2 identifies that no existing baseline cases test citation presence or accuracy. Stage 3 proposes probes targeting those specific gaps.
+The change sounds entirely reasonable — citations improve transparency. The non-obvious risk is that `retrieve_blog_posts` returns raw `page_content` only, with no source metadata. The model must infer which blog post a chunk came from based on text alone, and may fabricate or misattribute citations when chunks are ambiguous. Parity's Stage 1 flags this gap. Stage 2 identifies that no existing baseline cases test citation presence or accuracy. Stage 3 proposes probes targeting those specific gaps.
 
 ---
 
@@ -41,14 +41,14 @@ The change sounds entirely reasonable — citations improve transparency. The no
 - Node.js 22+ (used by the GitHub Actions workflow; installed automatically in CI)
 - Git and the `gh` CLI
 - An OpenAI API key — the app uses `gpt-4.1` for all LLM calls and OpenAI embeddings for the vector store
-- An Anthropic API key — Probegen uses Claude for Stages 1, 2, and 3
+- An Anthropic API key — Parity uses Claude for Stages 1, 2, and 3
 - A LangSmith account and API key — used for the baseline eval dataset and probe writeback
 
 ---
 
 ## Step 1: Create your own GitHub repository from this example
 
-Probegen runs as a GitHub Actions workflow, so the demo needs to live in its own repo. From the root of the Probegen repository:
+Parity runs as a GitHub Actions workflow, so the demo needs to live in its own repo. From the root of the Parity repository:
 
 ```bash
 cp -R examples/langgraph-agentic-rag /tmp/lilian-weng-rag-demo
@@ -56,7 +56,7 @@ cd /tmp/lilian-weng-rag-demo
 git init
 git add .
 git commit -m "Initial LangGraph agentic RAG demo"
-gh repo create lilian-weng-rag-probegen-demo --private --source=. --push
+gh repo create lilian-weng-rag-parity-demo --private --source=. --push
 ```
 
 If you are reading this from inside a repo you already copied, skip this step.
@@ -74,7 +74,7 @@ cp .env.example .env
 
 Open `.env` and fill in all three API keys:
 
-- **`ANTHROPIC_API_KEY`** — Required by Probegen (not this app)
+- **`ANTHROPIC_API_KEY`** — Required by Parity (not this app)
 - **`OPENAI_API_KEY`** — Required by the app (all LLM calls and embeddings)
 - **`LANGSMITH_API_KEY`** — Required because tracing is enabled; without it, the app will fail with auth errors
 
@@ -112,7 +112,7 @@ These two queries are specifically chosen because the demo patch creates regress
 
 ## Step 4: Seed the baseline eval dataset in LangSmith
 
-The demo expects a LangSmith dataset named `lilian-weng-rag-baseline`. This is already referenced in `probegen.yaml` under `mappings`. Without it, Stage 2 cannot run in coverage-aware mode and will fall back to starter mode.
+The demo expects a LangSmith dataset named `lilian-weng-rag-baseline`. This is already referenced in `parity.yaml` under `mappings`. Without it, Stage 2 cannot run in coverage-aware mode and will fall back to starter mode.
 
 Seed the dataset:
 
@@ -149,18 +149,18 @@ In your GitHub repo, go to **Settings → Secrets and variables → Actions** an
 Then create the approval label:
 
 ```bash
-gh label create "probegen:approve" --color 0075ca --description "Approve Probegen probe writeback"
+gh label create "parity:approve" --color 0075ca --description "Approve Parity probe writeback"
 ```
 
-Or go to **Issues → Labels → New label** and create a label named exactly `probegen:approve`. Probegen's merge-time workflow (`probegen-write` job) only fires when a PR is merged with this label. GitHub does not create unknown labels automatically.
+Or go to **Issues → Labels → New label** and create a label named exactly `parity:approve`. Parity's merge-time workflow (`parity-write` job) only fires when a PR is merged with this label. GitHub does not create unknown labels automatically.
 
 ---
 
-## Step 6: Review the Probegen config and workflow
+## Step 6: Review the Parity config and workflow
 
-This repo already contains everything Probegen needs. You do not need to create any of these files.
+This repo already contains everything Parity needs. You do not need to create any of these files.
 
-**`probegen.yaml`** — the Probegen configuration:
+**`parity.yaml`** — the Parity configuration:
 
 ```yaml
 behavior_artifacts:
@@ -183,10 +183,10 @@ mappings:
     dataset: "lilian-weng-rag-baseline"
 ```
 
-**`.github/workflows/probegen.yml`** — the GitHub Actions workflow with two jobs:
+**`.github/workflows/parity.yml`** — the GitHub Actions workflow with two jobs:
 
-- `probegen-analyze`: runs on every PR, executes Stages 1–3, posts a comment, uploads artifacts
-- `probegen-write`: runs on merge when the `probegen:approve` label is present, downloads the Stage 3 artifact and writes probes to LangSmith
+- `parity-analyze`: runs on every PR, executes Stages 1–3, posts a comment, uploads artifacts
+- `parity-write`: runs on merge when the `parity:approve` label is present, downloads the Stage 3 artifact and writes probes to LangSmith
 
 ---
 
@@ -216,12 +216,12 @@ The change is individually plausible. The risk — that the retriever passes onl
 
 ---
 
-## Step 8: Inspect the Probegen artifacts
+## Step 8: Inspect the Parity artifacts
 
-When the `probegen-analyze` workflow completes (~2–4 minutes), look for:
+When the `parity-analyze` workflow completes (~2–4 minutes), look for:
 
-- A PR comment from Probegen listing proposed probes
-- The uploaded workflow artifact containing `.probegen/stage1.json`, `.probegen/stage2.json`, and `.probegen/stage3.json`
+- A PR comment from Parity listing proposed probes
+- The uploaded workflow artifact containing `.parity/stage1.json`, `.parity/stage2.json`, and `.parity/stage3.json`
 
 Compare your output against the reference examples in [`expected_outputs/`](../expected_outputs/). The exact wording will differ, but the structure should match:
 
@@ -243,26 +243,26 @@ Compare your output against the reference examples in [`expected_outputs/`](../e
 
 ## Step 9: Approve and merge
 
-Add the `probegen:approve` label to the PR **before merging**. In the PR sidebar on GitHub, click **Labels** and select `probegen:approve`. Then merge the PR.
+Add the `parity:approve` label to the PR **before merging**. In the PR sidebar on GitHub, click **Labels** and select `parity:approve`. Then merge the PR.
 
-The `probegen-write` job will:
+The `parity-write` job will:
 
-1. Identify the earlier `probegen-analyze` run for the PR head SHA using `probegen resolve-run-id`
-2. Download the matching `.probegen` artifact from that run
-3. Check out the merged repo so `probegen.yaml` is available
+1. Identify the earlier `parity-analyze` run for the PR head SHA using `parity resolve-run-id`
+2. Download the matching `.parity` artifact from that run
+3. Check out the merged repo so `parity.yaml` is available
 4. Write the approved probes to `lilian-weng-rag-baseline` in LangSmith
 
 ---
 
 ## Step 10: Confirm probes were written to LangSmith
 
-Go to [smith.langchain.com](https://smith.langchain.com), open the `lilian-weng-rag-baseline` dataset, and confirm you see new examples added by Probegen.
+Go to [smith.langchain.com](https://smith.langchain.com), open the `lilian-weng-rag-baseline` dataset, and confirm you see new examples added by Parity.
 
 Each written example will include metadata such as:
 
 ```json
 {
-  "generated_by": "probegen",
+  "generated_by": "parity",
   "probe_type": "boundary_probe",
   "probe_id": "probe_001",
   "source_pr": "1"
@@ -275,7 +275,7 @@ Each written example will include metadata such as:
 
 - **Non-obvious prompt risk**: the citation instruction looks correct in isolation; the risk only becomes visible when you trace what the retriever actually passes to the generator
 - **Coverage-aware mode**: Stage 2 has a real baseline to compare against and identifies specific gaps rather than generating from scratch
-- **Python constant detection**: prompts are inline strings in `app/graph.py`, not `.md` files — Probegen finds them via `python_patterns: ["*_PROMPT"]`
+- **Python constant detection**: prompts are inline strings in `app/graph.py`, not `.md` files — Parity finds them via `python_patterns: ["*_PROMPT"]`
 - **Cross-post attribution cases**: the three blog posts share vocabulary, so citation accuracy depends on the model correctly inferring source identity from raw chunk text
 - **End-to-end artifact handoff**: the merge-time job downloads the exact artifact from the PR analysis run, not a recomputed version
 

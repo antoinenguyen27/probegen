@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from probegen.models.manifests import BehaviorChangeManifest, CoverageGap
-from probegen.models.probes import ProbeCase
-from probegen.tools.similarity import apply_diversity_limit, compute_probe_count, rank_probes
+from parity.models.manifests import BehaviorChangeManifest, CoverageGap
+from parity.models.probes import ProbeCase
+from parity.tools.similarity import apply_diversity_limit, compute_probe_count, rank_probes
 
 
 def _probe(probe_id: str, gap_id: str, specificity: float, testability: float, realism: float, similarity: float, *, probe_type: str = "boundary_probe") -> ProbeCase:

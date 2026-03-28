@@ -4,12 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from probegen.config import ProbegenConfig
-from probegen.errors import ConfigError
+from parity.config import ParityConfig
+from parity.errors import ConfigError
 
 
 def test_config_loads_full_reference(tmp_path: Path) -> None:
-    config_path = tmp_path / "probegen.yaml"
+    config_path = tmp_path / "parity.yaml"
     config_path.write_text(
         """
 version: 1
@@ -50,7 +50,7 @@ mappings:
     dataset: citation-agent-evals
 embedding:
   model: text-embedding-3-small
-  cache_path: .probegen/embedding_cache.db
+  cache_path: .parity/embedding_cache.db
   dimensions: 256
 similarity:
   duplicate_threshold: 0.9
@@ -60,7 +60,7 @@ generation:
   max_probes_generated: 20
   diversity_limit_per_gap: 2
 approval:
-  label: probegen:approve
+  label: parity:approve
 auto_run:
   enabled: true
   fail_on: regression_guard
@@ -73,7 +73,7 @@ budgets:
         encoding="utf-8",
     )
 
-    config = ProbegenConfig.load(config_path)
+    config = ParityConfig.load(config_path)
 
     assert config.context.trace_max_samples == 7
     assert config.embedding.dimensions == 256
@@ -81,18 +81,18 @@ budgets:
 
 
 def test_config_loads_defaults_when_missing_allowed() -> None:
-    config = ProbegenConfig.load("missing.yaml", allow_missing=True)
+    config = ParityConfig.load("missing.yaml", allow_missing=True)
     assert config.embedding.model == "text-embedding-3-small"
 
 
 def test_config_missing_raises_by_default() -> None:
     with pytest.raises(ConfigError):
-        ProbegenConfig.load("missing.yaml")
+        ParityConfig.load("missing.yaml")
 
 
 def test_config_invalid_threshold_raises(tmp_path: Path) -> None:
-    config_path = tmp_path / "probegen.yaml"
+    config_path = tmp_path / "parity.yaml"
     config_path.write_text("similarity:\n  duplicate_threshold: 1.5\n", encoding="utf-8")
 
     with pytest.raises(ConfigError):
-        ProbegenConfig.load(config_path)
+        ParityConfig.load(config_path)

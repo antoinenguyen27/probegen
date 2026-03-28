@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from probegen.models.eval_case import flatten_expected_output, is_conversation_input, normalize_input
+from parity.models.eval_case import flatten_expected_output, is_conversation_input, normalize_input
 
 
 # ---------------------------------------------------------------------------

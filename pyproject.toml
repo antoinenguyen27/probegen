@@ -3,13 +3,28 @@ requires = ["setuptools==80.9.0", "wheel==0.45.1"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "probegen"
-version = "0.1.7"
-description = "Change-coupled eval probe generation for LLM systems"
+name = "parity"
+version = "0.1.0"
+description = "Automatically generate evals for every AI change"
 readme = "README.md"
 requires-python = ">=3.11"
-authors = [{ name = "OpenAI Codex" }]
+authors = [{ name = "Antoine Nguyen" }]
 license = { text = "MIT" }
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Testing",
+]
+
+[project.urls]
+Homepage = "https://github.com/antoinenguyen27/parity"
+Repository = "https://github.com/antoinenguyen27/parity"
+Issues = "https://github.com/antoinenguyen27/parity/issues"
 dependencies = [
     "arize-phoenix-client==2.0.0",
     "braintrust==0.9.0",
@@ -33,16 +48,16 @@ dev = [
 ]
 
 [project.scripts]
-probegen = "probegen.cli.main:cli"
+parity = "parity.cli.main:cli"
 
 [tool.setuptools]
 include-package-data = true
 
 [tool.setuptools.packages.find]
-include = ["probegen*"]
+include = ["parity*"]
 
 [tool.pytest.ini_options]
-addopts = "--strict-markers --cov=probegen --cov-report=term-missing"
+addopts = "--strict-markers --cov=parity --cov-report=term-missing"
 testpaths = ["tests"]
 pythonpath = ["."]
 markers = [

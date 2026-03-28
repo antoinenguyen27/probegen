@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from probegen.cli.doctor_cmd import doctor_command
+from parity.cli.doctor_cmd import doctor_command
 
 
 def _write_config(path: Path, content: str = "version: 1\n") -> None:
@@ -18,22 +18,22 @@ class TestDoctorCommand:
         runner = CliRunner()
         result = runner.invoke(
             doctor_command,
-            ["--config", str(tmp_path / "probegen.yaml")],
+            ["--config", str(tmp_path / "parity.yaml")],
         )
         assert result.exit_code == 0
-        assert "probegen.yaml found" in result.output or "✗" in result.output
-        assert "probegen init" in result.output
+        assert "parity.yaml found" in result.output or "✗" in result.output
+        assert "parity init" in result.output
 
     def test_reports_valid_config(self, tmp_path: Path) -> None:
-        config_path = tmp_path / "probegen.yaml"
+        config_path = tmp_path / "parity.yaml"
         _write_config(config_path)
         runner = CliRunner()
         result = runner.invoke(doctor_command, ["--config", str(config_path)])
         assert result.exit_code == 0
-        assert "probegen.yaml is valid" in result.output
+        assert "parity.yaml is valid" in result.output
 
     def test_reports_invalid_yaml_config(self, tmp_path: Path) -> None:
-        config_path = tmp_path / "probegen.yaml"
+        config_path = tmp_path / "parity.yaml"
         config_path.write_text("version: [invalid: yaml: {\n", encoding="utf-8")
         runner = CliRunner()
         result = runner.invoke(doctor_command, ["--config", str(config_path)])
@@ -41,7 +41,7 @@ class TestDoctorCommand:
         assert "errors" in result.output or "✗" in result.output
 
     def test_anthropic_key_check_passes_when_set(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        config_path = tmp_path / "probegen.yaml"
+        config_path = tmp_path / "parity.yaml"
         _write_config(config_path)
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
         runner = CliRunner()
@@ -50,7 +50,7 @@ class TestDoctorCommand:
         assert "ANTHROPIC_API_KEY is set" in result.output
 
     def test_anthropic_key_check_fails_when_unset(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        config_path = tmp_path / "probegen.yaml"
+        config_path = tmp_path / "parity.yaml"
         _write_config(config_path)
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         runner = CliRunner()
@@ -59,7 +59,7 @@ class TestDoctorCommand:
         assert "ANTHROPIC_API_KEY is set" in result.output  # key is always checked
 
     def test_summary_line_shows_pass_counts(self, tmp_path: Path) -> None:
-        config_path = tmp_path / "probegen.yaml"
+        config_path = tmp_path / "parity.yaml"
         _write_config(config_path)
         runner = CliRunner()
         result = runner.invoke(doctor_command, ["--config", str(config_path)])
@@ -70,7 +70,7 @@ class TestDoctorCommand:
     def test_no_hint_patterns_reports_failure(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """Config with no hint patterns configured reports a failure check."""
         import subprocess
-        config_path = tmp_path / "probegen.yaml"
+        config_path = tmp_path / "parity.yaml"
         _write_config(config_path, "version: 1\n")
         # Create a minimal git repo so _git_ls_files returns tracked files
         subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)

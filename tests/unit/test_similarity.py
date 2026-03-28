@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from probegen.models.manifests import CoverageGap
-from probegen.models.probes import ProbeCase
-from probegen.tools.similarity import classify_similarity, cosine_similarity
+from parity.models.manifests import CoverageGap
+from parity.models.probes import ProbeCase
+from parity.tools.similarity import classify_similarity, cosine_similarity
 
 
 def test_cosine_similarity_basic_cases() -> None:

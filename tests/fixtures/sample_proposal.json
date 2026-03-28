@@ -61,9 +61,9 @@
     }
   ],
   "export_formats": {
-    "promptfoo": ".probegen/runs/abc123/probes.yaml",
+    "promptfoo": ".parity/runs/abc123/probes.yaml",
     "deepeval": null,
-    "raw_json": ".probegen/runs/abc123/ProbeProposal.json"
+    "raw_json": ".parity/runs/abc123/ProbeProposal.json"
   },
   "warnings": []
 }

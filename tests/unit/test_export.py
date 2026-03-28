@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from probegen.export import export_deepeval_stub, render_summary_markdown, write_run_artifacts
-from probegen.github import render_pr_comment, render_results_comment
-from probegen.models import BehaviorChangeManifest, CoverageGapManifest, ProbeProposal
+from parity.export import export_deepeval_stub, render_summary_markdown, write_run_artifacts
+from parity.github import render_pr_comment, render_results_comment
+from parity.models import BehaviorChangeManifest, CoverageGapManifest, ProbeProposal
 
 _FIXTURES = Path(__file__).parents[1] / "fixtures"
 
@@ -20,7 +20,7 @@ def test_write_run_artifacts_creates_expected_files(tmp_path: Path) -> None:
     proposal = ProbeProposal.model_validate(_load_fixture("sample_proposal.json"))
 
     outputs = write_run_artifacts(
-        run_dir=tmp_path / ".probegen" / "runs" / proposal.commit_sha,
+        run_dir=tmp_path / ".parity" / "runs" / proposal.commit_sha,
         stage1_manifest=manifest,
         stage2_manifest=gaps,
         proposal=proposal,
@@ -42,12 +42,12 @@ def test_render_pr_comment_includes_marker_and_probe_table() -> None:
 
     comment = render_pr_comment(proposal, stage1_manifest=manifest, stage2_manifest=gaps)
 
-    assert comment.startswith("<!-- probegen-comment -->")
-    assert "### Proposed Probes (2)" in comment
+    assert comment.startswith("<!-- parity-comment -->")
+    assert "### Proposed Evals (2)" in comment
     assert "probe_001" in comment  # Now included in collapsible details
     assert "boundary_probe" in comment
     assert "<details>" in comment  # Collapsible sections present
-    assert "Full Details" in comment  # Instruction text present
+    assert "Expand each eval below" in comment  # Instruction text present
 
 
 def test_render_pr_comment_reports_bootstrap_mode_without_eval_corpus() -> None:
@@ -84,7 +84,7 @@ def test_render_summary_markdown_lists_probes() -> None:
     proposal = ProbeProposal.model_validate(_load_fixture("sample_proposal.json"))
     summary = render_summary_markdown(proposal)
 
-    assert "# Probegen Probe Summary" in summary
+    assert "# Parity Probe Summary" in summary
     assert "probe_001" in summary
 
 
@@ -95,7 +95,7 @@ def test_render_results_comment_handles_zero_writes() -> None:
         failures=[{"probe_id": "n/a", "probe_type": "n/a", "failure": "No write target found"}],
     )
 
-    assert "No probes were written" in comment
+    assert "No evals were written" in comment
     assert "Targets attempted" in comment
 
 
@@ -134,5 +134,5 @@ def test_render_results_comment_with_pass_fail_counts() -> None:
         failed=1,
     )
 
-    assert "3 probes written to" in comment
+    assert "3 evals written to" in comment
     assert "2 passed, 1 failed" in comment

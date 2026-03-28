@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from probegen.cli.write_probes import _selected_probes, write_probes_from_proposal
-from probegen.config import MappingConfig, PlatformsConfig, ProbegenConfig, PromptfooPlatformConfig
-from probegen.models import ProbeProposal
+from parity.cli.write_probes import _selected_probes, write_probes_from_proposal
+from parity.config import MappingConfig, PlatformsConfig, ParityConfig, PromptfooPlatformConfig
+from parity.models import ProbeProposal
 
 _FIXTURES = Path(__file__).parents[1] / "fixtures"
 
@@ -28,7 +28,7 @@ def _write_stage_artifacts(tmp_path: Path) -> Path:
 def test_write_probes_uses_promptfoo_mapping_and_counts_success(tmp_path: Path) -> None:
     proposal = ProbeProposal.model_validate(_load_fixture("sample_proposal.json"))
     proposal_path = _write_stage_artifacts(tmp_path)
-    config = ProbegenConfig(
+    config = ParityConfig(
         platforms=PlatformsConfig(promptfoo=PromptfooPlatformConfig(config_path=str(tmp_path / "promptfooconfig.yaml"))),
         mappings=[
             MappingConfig(
@@ -51,7 +51,7 @@ def test_write_probes_fails_when_no_mapping_or_fallback_exists(tmp_path: Path) -
     proposal = ProbeProposal.model_validate(_load_fixture("sample_proposal.json"))
     proposal_path = _write_stage_artifacts(tmp_path)
 
-    outcome = write_probes_from_proposal(proposal, config=ProbegenConfig(), proposal_path=proposal_path)
+    outcome = write_probes_from_proposal(proposal, config=ParityConfig(), proposal_path=proposal_path)
 
     assert outcome.exit_code == 2
     assert outcome.total_written == 0
@@ -66,7 +66,7 @@ def test_write_probes_falls_back_to_platform_promptfoo_when_no_explicit_mapping(
     proposal = ProbeProposal.model_validate(_load_fixture("sample_proposal.json"))
     proposal_path = _write_stage_artifacts(tmp_path)
     fallback_config_path = tmp_path / "promptfooconfig.yaml"
-    config = ProbegenConfig(
+    config = ParityConfig(
         platforms=PlatformsConfig(
             promptfoo=PromptfooPlatformConfig(config_path=str(fallback_config_path))
         ),

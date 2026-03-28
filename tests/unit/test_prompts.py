@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from probegen.context import ContextPack
-from probegen.prompts.stage2_template import render_stage2_prompt
-from probegen.prompts.stage3_template import render_stage3_prompt
+from parity.context import ContextPack
+from parity.prompts.stage2_template import render_stage2_prompt
+from parity.prompts.stage3_template import render_stage3_prompt
 
 
 def test_stage2_prompt_includes_bootstrap_instructions() -> None:

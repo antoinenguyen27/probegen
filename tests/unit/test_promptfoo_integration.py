@@ -5,13 +5,13 @@ from pathlib import Path
 
 import yaml
 
-from probegen.integrations.promptfoo import (
+from parity.integrations.promptfoo import (
     PromptfooReader,
     PromptfooWriter,
     probe_to_promptfoo_test,
     promptfoo_assertion_type,
 )
-from probegen.models import ProbeCase
+from parity.models import ProbeCase
 
 _FIXTURES = Path(__file__).parents[2] / "tests" / "fixtures"
 

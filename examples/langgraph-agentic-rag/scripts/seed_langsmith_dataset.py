@@ -13,7 +13,7 @@ DATASET_NAME = "lilian-weng-rag-baseline"
 # Stable namespace for deterministic UUID generation from string IDs.
 # This ensures the same slug always maps to the same UUID across runs,
 # allowing the deduplication logic to work correctly.
-LANGSMITH_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "probegen-langsmith-examples")
+LANGSMITH_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "parity-langsmith-examples")
 
 EXAMPLES: list[dict[str, Any]] = [
     {
@@ -142,7 +142,7 @@ def main() -> None:
     except Exception:
         dataset = client.create_dataset(
             dataset_name=DATASET_NAME,
-            description="Baseline eval set for the Probegen LangGraph agentic RAG demo (Lilian Weng blog posts).",
+            description="Baseline eval set for the Parity LangGraph agentic RAG demo (Lilian Weng blog posts).",
         )
 
     existing_ids = {

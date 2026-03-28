@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from probegen.models import BehaviorChangeManifest, CoverageGapManifest, ProbeProposal
+from parity.models import BehaviorChangeManifest, CoverageGapManifest, ProbeProposal
 
 _FIXTURES = Path(__file__).parent / "fixtures"
 

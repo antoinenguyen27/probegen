@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from probegen.stages._common import attempt_partial_extraction
+from parity.stages._common import attempt_partial_extraction
 
 
 def test_returns_none_for_empty_string() -> None:

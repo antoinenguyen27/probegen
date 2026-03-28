@@ -12,24 +12,24 @@
 - PR comment warnings now appear before the Analysis Mode section (previously after). Warning text uses blockquote formatting for visibility.
 - Approval instruction now includes "before merging".
 - Stage 4 write failure comment now includes a link to Actions artifacts when `GITHUB_RUN_ID` is set.
-- README now accurately describes the full artifact scope Probegen detects: prompts, instructions, guardrails, validators, tool descriptions, classifiers, retry policies, output schemas, and other agent harness artifacts.
+- README now accurately describes the full artifact scope Parity detects: prompts, instructions, guardrails, validators, tool descriptions, classifiers, retry policies, output schemas, and other agent harness artifacts.
 - README platform reference corrected from "Phoenix" to "Arize Phoenix" for consistency with spec and config.
 - README probe description updated to mention multi-turn conversational probe generation.
 - README Setup section: all absolute `/Users/an/...` links replaced with correct relative paths.
-- `probegen-spec-addendum.md` Gap 2: Stage 3 token budget fallback behaviour corrected — implementation reduces `good_examples` and `bad_examples` first, then drops traces entirely (not traces first as previously documented).
-- `probegen-spec-addendum.md` Gap 2: Stage 2 stripping comment updated to name all three stripped fields (`raw_diff`, `before_content`, `after_content`).
-- `probegen-spec.md` Step 5 of the setup checklist reworded to describe artifact matching by `probegen.yaml` path patterns.
+- `parity-spec-addendum.md` Gap 2: Stage 3 token budget fallback behaviour corrected — implementation reduces `good_examples` and `bad_examples` first, then drops traces entirely (not traces first as previously documented).
+- `parity-spec-addendum.md` Gap 2: Stage 2 stripping comment updated to name all three stripped fields (`raw_diff`, `before_content`, `after_content`).
+- `parity-spec.md` Step 5 of the setup checklist reworded to describe artifact matching by `parity.yaml` path patterns.
 
 ### Added
-- `probegen doctor` command: validates setup (API keys, hint pattern file matches, context files, optional GitHub label check). Exits 0 always; informational only.
-- `probegen post-comment --no-changes`: posts the minimal no-changes comment for PRs without behavioral artifact changes.
+- `parity doctor` command: validates setup (API keys, hint pattern file matches, context files, optional GitHub label check). Exits 0 always; informational only.
+- `parity post-comment --no-changes`: posts the minimal no-changes comment for PRs without behavioral artifact changes.
 - `OPENAI_API_KEY` added to README secrets table and setup instructions.
-- Label creation instruction (`gh label create "probegen:approve" ...`) added to `probegen init` completion output and README.
-- `probegen.yaml.example` restructured: single-platform primary example (LangSmith), other platforms as commented-out blocks. Added inline comments for hint patterns, guardrail artifacts, cost control, and platform config sections.
-- `probegen-spec-addendum.md` Gap 4: `probegen resolve-run-id` command fully specified.
+- Label creation instruction (`gh label create "parity:approve" ...`) added to `parity init` completion output and README.
+- `parity.yaml.example` restructured: single-platform primary example (LangSmith), other platforms as commented-out blocks. Added inline comments for hint patterns, guardrail artifacts, cost control, and platform config sections.
+- `parity-spec-addendum.md` Gap 4: `parity resolve-run-id` command fully specified.
 
 ### Removed
-- `.github/workflows/probegen.yml` removed from the repository root. The reference workflow lives at `examples/langgraph-agentic-rag/.github/workflows/probegen.yml`. The root copy was misconfigured (no `probegen.yaml`, package not published) and fired on every PR, failing with exit code 1.
+- `.github/workflows/parity.yml` removed from the repository root. The reference workflow lives at `examples/langgraph-agentic-rag/.github/workflows/parity.yml`. The root copy was misconfigured (no `parity.yaml`, package not published) and fired on every PR, failing with exit code 1.
 
 ---
 
@@ -43,4 +43,4 @@
 ### Changed
 - Stage 2 coverage summaries now record `mode`, `corpus_status`, and `bootstrap_reason`.
 - Stage 3 prompts now receive coverage summary context and explicit bootstrap-mode instructions.
-- Docs and specs now state that Probegen works without pre-existing evals, while improving with more eval coverage and richer product context.
+- Docs and specs now state that Parity works without pre-existing evals, while improving with more eval coverage and richer product context.
