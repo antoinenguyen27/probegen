@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 from langsmith import Client
 
 from parity.models import EvalCase, ProbeCase, normalize_input
 from parity.models.eval_case import ConversationMessage, flatten_expected_output
+
+# Stable namespace for deterministic UUID generation from probe IDs.
+# This ensures the same probe_id always maps to the same UUID across runs,
+# enabling deduplication and idempotency.
+LANGSMITH_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "parity-langsmith-probes")
 
 
 def _as_mapping(value: Any) -> dict[str, Any]:
@@ -81,7 +87,6 @@ class LangSmithWriter:
 
         examples = [
             {
-                "id": probe.probe_id,
                 "inputs": (
                     {"messages": serialize_input(probe.input)}
                     if probe.input_format == "conversation"
@@ -101,8 +106,13 @@ class LangSmithWriter:
             }
             for probe in probes
         ]
+        # Generate deterministic UUIDs from probe IDs using a stable namespace.
+        # This ensures the same probe_id always maps to the same UUID, enabling
+        # deduplication and idempotency across multiple write operations.
+        ids = [uuid.uuid5(LANGSMITH_NAMESPACE, probe.probe_id) for probe in probes]
         return self.client.create_examples(
             dataset_name=dataset_name,
             dataset_id=dataset_id,
             examples=examples,
+            ids=ids,
         )
