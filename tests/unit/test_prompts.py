@@ -22,6 +22,9 @@ def test_stage2_prompt_includes_bootstrap_instructions() -> None:
 
     assert "switch to bootstrap mode" in prompt
     assert "leave `nearest_existing_cases` empty" in prompt
+    assert "remain in coverage-aware mode" in prompt
+    assert "`coverage_summary.retrieval_notes`" in prompt
+    assert "Never populate it when mode is `coverage_aware`" in prompt
 
 
 def test_stage3_prompt_describes_bootstrap_mode() -> None:
@@ -78,4 +81,3 @@ def test_stage3_prompt_describes_bootstrap_mode() -> None:
     assert "COVERAGE SUMMARY" in prompt
     assert '"mode": "bootstrap"' in prompt
     assert "there is no usable eval corpus for comparison" in prompt
-

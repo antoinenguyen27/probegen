@@ -68,6 +68,7 @@ class CoverageSummary(ParityModel):
     dataset: str | None = None
     mode: CoverageMode = "coverage_aware"
     corpus_status: CorpusStatus = "available"
+    retrieval_notes: str | None = None
     bootstrap_reason: str | None = None
 
     @field_validator("coverage_ratio")

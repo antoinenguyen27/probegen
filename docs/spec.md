@@ -614,17 +614,23 @@ PROCESS:
    caching automatically).
 3. For each risk flag and predicted impact in the manifest, call find_similar to 
    determine whether existing coverage addresses it.
-4. Classify each risk flag as: covered | boundary_shift | uncovered
-5. For guardrail artifacts, analyze coverage in both directions:
+4. If relevant eval cases are found by any retrieval path, remain in coverage-aware mode:
+   - set `coverage_summary.mode` to `coverage_aware`
+   - set `coverage_summary.corpus_status` to `available`
+   - if needed, explain non-standard retrieval details in `coverage_summary.retrieval_notes`
+   - leave `coverage_summary.bootstrap_reason` empty
+5. Classify each risk flag as: covered | boundary_shift | uncovered
+6. For guardrail artifacts, analyze coverage in both directions:
    - Are there existing cases testing things the guardrail should catch?
    - Are there existing cases testing things the guardrail should allow through?
-6. If no relevant eval cases exist, switch to bootstrap mode:
+7. If no relevant eval cases exist, switch to bootstrap mode:
    - mark `coverage_summary.mode` as `bootstrap`
    - mark `coverage_summary.corpus_status` as `empty` or `unavailable`
    - explain the reason in `coverage_summary.bootstrap_reason`
+   - use `coverage_summary.retrieval_notes` only for extra context, not as a substitute for `bootstrap_reason`
    - emit baseline gaps with empty `nearest_existing_cases`
-7. Identify the top-priority gaps: uncovered risk flags ranked by severity.
-8. Output the CoverageGapManifest JSON.
+8. Identify the top-priority gaps: uncovered risk flags ranked by severity.
+9. Output the CoverageGapManifest JSON.
 
 IMPORTANT: Do not generate probes in this stage. Identify gaps only.
 ```
@@ -646,6 +652,7 @@ IMPORTANT: Do not generate probes in this stage. Identify gaps only.
     "dataset": "citation-agent-evals",
     "mode": "coverage_aware",
     "corpus_status": "available",
+    "retrieval_notes": null,
     "bootstrap_reason": null
   },
   "gaps": [
@@ -1952,6 +1959,7 @@ class CoverageSummary(BaseModel):
     dataset: Optional[str]
     mode: Literal["coverage_aware", "bootstrap"]
     corpus_status: Literal["available", "empty", "unavailable"]
+    retrieval_notes: Optional[str]    # optional explanatory note for non-standard retrieval paths
     bootstrap_reason: Optional[str]   # required when mode == "bootstrap"
 ```
 

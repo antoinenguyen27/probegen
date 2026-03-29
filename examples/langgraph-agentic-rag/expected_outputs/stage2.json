@@ -12,6 +12,7 @@
     "dataset": "lilian-weng-rag-baseline",
     "mode": "coverage_aware",
     "corpus_status": "available",
+    "retrieval_notes": null,
     "bootstrap_reason": null
   },
   "gaps": [

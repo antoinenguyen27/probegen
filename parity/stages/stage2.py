@@ -5,6 +5,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from claude_agent_sdk import ClaudeAgentOptions
 
@@ -15,6 +16,17 @@ from parity.prompts.stage2_template import render_stage2_prompt
 from parity.stages._common import StageRunResult, run_stage_with_retry, simplify_schema
 
 _STAGE2_INJECT_KEYS = {"run_id", "stage1_run_id", "timestamp", "schema_version"}
+
+
+def _normalize_stage2_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    coverage_summary = payload.get("coverage_summary")
+    if not isinstance(coverage_summary, dict):
+        return payload
+
+    if coverage_summary.get("mode") == "coverage_aware" and coverage_summary.get("bootstrap_reason"):
+        coverage_summary.setdefault("retrieval_notes", coverage_summary["bootstrap_reason"])
+        coverage_summary.pop("bootstrap_reason", None)
+    return payload
 
 
 def run_stage2(
@@ -28,13 +40,13 @@ def run_stage2(
     timestamp = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     prompt = render_stage2_prompt(stage1_manifest)
 
-    behavior_count = len(stage1_manifest.get("behaviors", []))
+    change_count = len(stage1_manifest.get("changes", []))
     mcp_configured = isinstance(mcp_servers, (str, Path)) or (
         isinstance(mcp_servers, dict) and bool(mcp_servers)
     )
     prompt_tokens = count_tokens(prompt)
     print(
-        f"[stage-2] behaviors_from_stage1={behavior_count} mcp_configured={mcp_configured} "
+        f"[stage-2] changes_from_stage1={change_count} mcp_configured={mcp_configured} "
         f"prompt_tokens={prompt_tokens}",
         file=sys.stderr,
         flush=True,
@@ -68,6 +80,7 @@ def run_stage2(
                 "stage1_run_id": stage1_manifest.get("run_id", ""),
                 "timestamp": timestamp,
             },
+            normalize_payload=_normalize_stage2_payload,
         )
     )
     gap_count = len(getattr(result.data, "gaps", []))

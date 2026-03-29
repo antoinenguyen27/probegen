@@ -92,9 +92,9 @@ def run_stage_command(
             if manifest_path is None:
                 raise SystemExit(5)
             manifest = _load_json(manifest_path)
-            artifact_count = len(manifest.get("hint_matched_artifacts", []))
+            change_count = len(manifest.get("changes", []))
             click.echo(
-                f"[parity] Stage 2 starting — {artifact_count} artifact(s) from Stage 1",
+                f"[parity] Stage 2 starting — {change_count} change(s) from Stage 1",
                 err=True,
             )
             result = run_stage2(manifest, config, mcp_servers=mcp_path if mcp_payload["mcpServers"] else {})

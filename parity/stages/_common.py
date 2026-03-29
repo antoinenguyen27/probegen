@@ -110,6 +110,7 @@ async def _run_query(
     options: ClaudeAgentOptions,
     output_model: Any,
     inject_fields: dict[str, Any] | None = None,
+    normalize_payload: Any | None = None,
 ) -> StageRunResult:
     last_model: str | None = None
     last_assistant_error: str | None = None
@@ -203,6 +204,8 @@ async def _run_query(
 
         if inject_fields:
             parsed_payload.update(inject_fields)
+        if normalize_payload is not None:
+            parsed_payload = normalize_payload(parsed_payload)
         parsed = output_model.model_validate(parsed_payload)
     except Exception as exc:
         # Capture raw result for debugging: show first 300 chars with escaped newlines
@@ -232,6 +235,7 @@ async def run_stage_with_retry(
     options: ClaudeAgentOptions,
     output_model: Any,
     inject_fields: dict[str, Any] | None = None,
+    normalize_payload: Any | None = None,
     max_retries: int = 3,
 ) -> StageRunResult:
     waits = [30, 60, 120]
@@ -243,6 +247,7 @@ async def run_stage_with_retry(
                 options=options,
                 output_model=output_model,
                 inject_fields=inject_fields,
+                normalize_payload=normalize_payload,
             )
         except RateLimitStageError:
             if attempt >= max_retries - 1:

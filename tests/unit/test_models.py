@@ -193,6 +193,32 @@ def test_coverage_summary_accepts_bootstrap_mode_with_reason() -> None:
     assert manifest.coverage_summary.mode == "bootstrap"
 
 
+def test_coverage_summary_accepts_coverage_aware_with_retrieval_notes() -> None:
+    manifest = CoverageGapManifest.model_validate(
+        {
+            "run_id": "run",
+            "stage1_run_id": "stage1",
+            "timestamp": datetime.now(tz=timezone.utc).isoformat(),
+            "unmapped_artifacts": [],
+            "coverage_summary": {
+                "total_relevant_cases": 5,
+                "cases_covering_changed_behavior": 0,
+                "coverage_ratio": 0.0,
+                "platform": "langsmith",
+                "dataset": "dataset",
+                "mode": "coverage_aware",
+                "corpus_status": "available",
+                "retrieval_notes": "Retrieved 5 cases via file-based fallback after MCP lookup was unavailable.",
+            },
+            "gaps": [],
+        }
+    )
+
+    assert manifest.coverage_summary is not None
+    assert manifest.coverage_summary.mode == "coverage_aware"
+    assert manifest.coverage_summary.retrieval_notes is not None
+
+
 def test_probe_proposal_recomputes_probe_count() -> None:
     proposal = ProbeProposal.model_validate(
         {
