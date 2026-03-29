@@ -1,7 +1,7 @@
 version: 1
 
 # ── Artifact Hint Patterns ─────────────────────────────────────
-# Hint patterns guide Probegen's artifact discovery — they are not filters.
+# Hint patterns guide Parity's artifact discovery — they are not filters.
 # The Stage 1 agent always sees all changed files and can inspect any of them.
 # Files matching these patterns are pre-loaded with before/after content for efficiency.
 
@@ -47,7 +47,7 @@ context:
 
 # ── Platform Configuration ─────────────────────────────────────
 # Configure the eval platform(s) you use. Only include platforms
-# where you want Probegen to read coverage and write probes.
+# where you want Parity to read coverage and write probes.
 platforms:
   langsmith:
     api_key_env: LANGSMITH_API_KEY
@@ -80,7 +80,7 @@ mappings:
 
 embedding:
   model: "text-embedding-3-small"
-  cache_path: ".probegen/embedding_cache.db"
+  cache_path: ".parity/embedding_cache.db"
   # dimensions: 1536  # optional; use only if configuring a custom embedding backend
 
 similarity:
@@ -88,12 +88,12 @@ similarity:
   boundary_threshold: 0.72
 
 generation:
-  max_probes_surfaced: 8
-  max_probes_generated: 20
+  proposal_probe_limit: 8
+  candidate_probe_pool_limit: 20
   diversity_limit_per_gap: 2
 
 approval:
-  label: "probegen:approve"
+  label: "parity:approve"
 
 # ── Auto-Run (planned, not yet active in v1) ───────────────────
 # Auto-run will trigger a scoped eval run after probe writeback and
@@ -103,13 +103,18 @@ approval:
 #   fail_on: "regression_guard"
 #   notify: "pr_comment"
 
-# ── Cost Control ───────────────────────────────────────────────
-# Maximum Anthropic API spend per stage per PR run.
-# Stage 1 (change detection): typically $0.05–0.30
-# Stage 2 (coverage analysis): typically $0.10–0.50
-# Stage 3 (probe generation): typically $0.10–0.60
-# Increase if stages are timing out on large diffs or complex repos.
-budgets:
-  stage1_usd: 0.5
-  stage2_usd: 0.75
-  stage3_usd: 1.0
+# ── Spend Caps ────────────────────────────────────────────────
+# Optional total run spend cap. If omitted, Parity falls back to an internal default.
+# This governs the full analysis budget Parity allocates across:
+# - Stage 1 agent spend
+# - Stage 2 agent spend
+# - Stage 2 embedding spend
+# - Stage 3 agent spend
+spend:
+  analysis_total_spend_cap_usd: 2.25
+
+  # Advanced overrides. Set all four together only if you want manual control.
+  # stage1_agent_cap_usd: 0.7875
+  # stage2_agent_cap_usd: 0.45
+  # stage2_embedding_cap_usd: 0.3375
+  # stage3_agent_cap_usd: 0.675

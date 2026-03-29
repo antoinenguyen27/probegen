@@ -6,6 +6,11 @@ from typing import Any
 
 from parity.context import count_tokens, sample_traces, trim_collection_to_budget, truncate_text
 
+STAGE3_MODEL_CONTEXT_WINDOW_TOKENS = 100_000
+STAGE3_RESPONSE_HEADROOM_BASE_TOKENS = 12_000
+STAGE3_RESPONSE_HEADROOM_PER_CANDIDATE_TOKENS = 400
+STAGE3_MIN_INPUT_CONTEXT_LIMIT_TOKENS = 50_000
+
 STAGE3_SYSTEM_TEMPLATE = """You are a behavioral probe generator for LLM-based agent systems.
 
 PRODUCT CONTEXT:
@@ -43,7 +48,9 @@ QUALITY CRITERIA:
 - Testable
 - Novel relative to nearest existing cases
 - Realistic for the product and users
-- No more than {max_probes_surfaced} surfaced probes
+- Generate up to {candidate_probe_pool_limit} candidate probes
+- Return the full candidate pool in `probes`
+- The host will rerank, diversify, and keep at most {proposal_probe_limit} final proposal probes for review
 
 BOOTSTRAP MODE:
 If coverage_summary.mode is `bootstrap`, there is no usable eval corpus for comparison.
@@ -105,17 +112,30 @@ def format_nearest_cases(gaps: list[dict[str, Any]], *, max_per_gap: int = 5) ->
     return truncate_text(serialized, 4000)
 
 
+def compute_stage3_input_context_limit_tokens(candidate_probe_pool_limit: int) -> int:
+    reserved_response_tokens = (
+        STAGE3_RESPONSE_HEADROOM_BASE_TOKENS
+        + (candidate_probe_pool_limit * STAGE3_RESPONSE_HEADROOM_PER_CANDIDATE_TOKENS)
+    )
+    return max(
+        STAGE3_MIN_INPUT_CONTEXT_LIMIT_TOKENS,
+        STAGE3_MODEL_CONTEXT_WINDOW_TOKENS - reserved_response_tokens,
+    )
+
+
 def render_stage3_prompt(
     stage1_manifest: dict,
     stage2_manifest: dict,
     context,
     *,
-    max_probes_surfaced: int,
+    proposal_probe_limit: int,
+    candidate_probe_pool_limit: int,
 ) -> str:
     stage1_brief = extract_stage1_brief(stage1_manifest)
     traces = sample_traces(context.traces_dir, max_samples=context.trace_max_samples)
     trimmed_traces = trim_collection_to_budget(traces, per_item_budget=300, total_budget=6000)
     trace_samples = "\n\n---\n\n".join(trimmed_traces)
+    context_pack_limit_tokens = compute_stage3_input_context_limit_tokens(candidate_probe_pool_limit)
     multi_turn_block = (
         MULTI_TURN_BLOCK if any(gap.get("is_conversational") for gap in stage2_manifest.get("gaps", [])) else ""
     )
@@ -131,11 +151,12 @@ def render_stage3_prompt(
         coverage_summary_json=json.dumps(stage2_manifest.get("coverage_summary") or {}, indent=2),
         gaps_json=json.dumps(stage2_manifest.get("gaps", []), indent=2),
         nearest_cases_json=format_nearest_cases(stage2_manifest.get("gaps", []), max_per_gap=5),
-        max_probes_surfaced=max_probes_surfaced,
+        proposal_probe_limit=proposal_probe_limit,
+        candidate_probe_pool_limit=candidate_probe_pool_limit,
         multi_turn_block=multi_turn_block,
     )
 
-    if count_tokens(rendered) <= 80000:
+    if count_tokens(rendered) <= context_pack_limit_tokens:
         return rendered
 
     reduced_good = truncate_text(context.good_examples, 1500)
@@ -151,6 +172,7 @@ def render_stage3_prompt(
         coverage_summary_json=json.dumps(stage2_manifest.get("coverage_summary") or {}, indent=2),
         gaps_json=json.dumps(stage2_manifest.get("gaps", []), indent=2),
         nearest_cases_json=format_nearest_cases(stage2_manifest.get("gaps", []), max_per_gap=5),
-        max_probes_surfaced=max_probes_surfaced,
+        proposal_probe_limit=proposal_probe_limit,
+        candidate_probe_pool_limit=candidate_probe_pool_limit,
         multi_turn_block=multi_turn_block,
     )

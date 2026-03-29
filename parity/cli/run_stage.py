@@ -27,6 +27,18 @@ def _load_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _build_budget_failure_metadata(stage: int, exc: BudgetExceededError) -> dict:
+    metadata = {
+        "stage": stage,
+        "status": "budget_exceeded",
+        "cost_usd": exc.cost_usd,
+        "error": exc.message,
+    }
+    if exc.details:
+        metadata.update(exc.details)
+    return metadata
+
+
 @click.command("run-stage")
 @click.argument("stage", type=click.IntRange(1, 3))
 @click.option("--pr-number", type=int)
@@ -133,6 +145,7 @@ def run_stage_command(
     except BudgetExceededError as exc:
         if exc.partial_result is not None:
             _write_json(output_path, exc.partial_result)
+        _write_json(output_path.parent / "metadata.json", _build_budget_failure_metadata(stage, exc))
         click.echo(str(exc), err=True)
         raise SystemExit(3) from exc
     except SchemaValidationError as exc:

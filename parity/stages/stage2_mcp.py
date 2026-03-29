@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -9,11 +10,16 @@ from mcp.server.fastmcp import FastMCP
 from phoenix.client import Client as PhoenixClient
 
 from parity.config import ParityConfig
+from parity.errors import EmbeddingError
 from parity.integrations.braintrust import BraintrustDirectReader
 from parity.integrations.langsmith import LangSmithReader
 from parity.integrations.phoenix import PhoenixReader
 from parity.integrations.promptfoo import PromptfooReader
-from parity.tools.embedding import embed_batch
+from parity.tools.embedding import (
+    EmbeddingBatchUsage,
+    execute_planned_embedding_batch,
+    plan_embedding_batch,
+)
 from parity.tools.similarity import classify_embedding_against_corpus, classify_embeddings_against_corpus
 
 _PROMPTFOO_DISCOVERY_GLOBS = (
@@ -29,6 +35,69 @@ _PROMPTFOO_DISCOVERY_GLOBS = (
 _IGNORED_DISCOVERY_DIRS = {".git", ".claude", ".parity", ".venv", "__pycache__", "node_modules", "dist", "build"}
 
 
+@dataclass(slots=True)
+class Stage2EmbeddingSpendLedger:
+    request_count: int = 0
+    blocked_request_count: int = 0
+    input_count: int = 0
+    cached_count: int = 0
+    miss_count: int = 0
+    input_tokens: int = 0
+    estimated_cost_usd: float = 0.0
+    cache_warning: bool = False
+    models: set[str] = field(default_factory=set)
+
+    def record_usage(self, usage: EmbeddingBatchUsage, *, cache_warning: bool) -> None:
+        self.request_count += usage.request_count
+        self.input_count += usage.input_count
+        self.cached_count += usage.cached_count
+        self.miss_count += usage.miss_count
+        self.input_tokens += usage.input_tokens
+        self.estimated_cost_usd += usage.estimated_cost_usd or 0.0
+        self.cache_warning = self.cache_warning or cache_warning
+        self.models.add(usage.model)
+
+    def model_dump(self) -> dict[str, Any]:
+        return {
+            "request_count": self.request_count,
+            "blocked_request_count": self.blocked_request_count,
+            "input_count": self.input_count,
+            "cached_count": self.cached_count,
+            "miss_count": self.miss_count,
+            "input_tokens": self.input_tokens,
+            "estimated_cost_usd": self.estimated_cost_usd,
+            "cache_warning": self.cache_warning,
+            "models": sorted(self.models),
+        }
+
+
+@dataclass(slots=True)
+class Stage2RetrievalLedger:
+    fetch_request_count: int = 0
+    total_cases: int = 0
+    sources: list[dict[str, str]] = field(default_factory=list)
+
+    def record_fetch(self, *, platform: str, target: str, case_count: int) -> None:
+        self.fetch_request_count += 1
+        self.total_cases += case_count
+        source = {"platform": platform, "target": target}
+        if source not in self.sources:
+            self.sources.append(source)
+
+    def model_dump(self) -> dict[str, Any]:
+        return {
+            "fetch_request_count": self.fetch_request_count,
+            "total_cases": self.total_cases,
+            "sources": self.sources,
+        }
+
+
+@dataclass(slots=True)
+class Stage2MCPServerBundle:
+    server: FastMCP
+    toolbox: "Stage2Toolbox"
+
+
 class Stage2Toolbox:
     def __init__(
         self,
@@ -36,10 +105,14 @@ class Stage2Toolbox:
         config: ParityConfig,
         repo_root: str | Path,
         env: dict[str, str] | None = None,
+        embedding_spend_cap_usd: float | None = None,
     ) -> None:
         self.config = config
         self.repo_root = Path(repo_root).resolve()
         self.env = env or {}
+        self.embedding_spend_cap_usd = embedding_spend_cap_usd
+        self.embedding_spend = Stage2EmbeddingSpendLedger()
+        self.retrieval = Stage2RetrievalLedger()
 
     def search_eval_targets(
         self,
@@ -153,6 +226,7 @@ class Stage2Toolbox:
         else:
             raise ValueError(f"Unsupported platform: {platform}")
 
+        self.retrieval.record_fetch(platform=normalized_platform, target=target, case_count=len(cases))
         return {
             "platform": normalized_platform,
             "target": target,
@@ -169,16 +243,65 @@ class Stage2Toolbox:
         dimensions: int | None = None,
     ) -> dict[str, Any]:
         """Embed a batch of eval inputs using host-owned credentials and cache settings."""
-        embeddings, cache_warning = embed_batch(
+        resolved_model = model or self.config.embedding.model
+        resolved_dimensions = dimensions if dimensions is not None else self.config.embedding.dimensions
+        cache_path = self.config.resolve_path(self.config.embedding.cache_path, self.repo_root)
+        plan = plan_embedding_batch(
             inputs,
-            model=model or self.config.embedding.model,
-            cache_path=self.config.resolve_path(self.config.embedding.cache_path, self.repo_root),
-            dimensions=dimensions if dimensions is not None else self.config.embedding.dimensions,
+            model=resolved_model,
+            cache_path=cache_path,
+            dimensions=resolved_dimensions,
         )
+        remaining_budget_usd: float | None = None
+        projected_request_cost_usd = plan.usage.estimated_cost_usd
+        if self.embedding_spend_cap_usd is not None:
+            remaining_budget_usd = max(self.embedding_spend_cap_usd - self.embedding_spend.estimated_cost_usd, 0.0)
+            if plan.usage.miss_count > 0 and projected_request_cost_usd is None:
+                raise EmbeddingError(
+                    f"Embedding model `{resolved_model}` is not supported for spend tracking; "
+                    "configure a priced embedding model or remove the total spend cap."
+                )
+            if (
+                projected_request_cost_usd is not None
+                and projected_request_cost_usd > remaining_budget_usd + 1e-9
+            ):
+                self.embedding_spend.blocked_request_count += 1
+                cached_embeddings = [
+                    plan.cached_results[item.id] for item in plan.items if item.id in plan.cached_results
+                ]
+                return {
+                    "count": len(cached_embeddings),
+                    "cache_warning": plan.cache_warning,
+                    "embeddings": cached_embeddings,
+                    "missing_ids": [item.id for item in plan.misses],
+                    "budget_exceeded": True,
+                    "complete": not plan.misses,
+                    "remaining_budget_usd": remaining_budget_usd,
+                    "estimated_request_cost_usd": projected_request_cost_usd,
+                    "usage": plan.usage.model_dump(),
+                    "message": (
+                        "Embedding spend cap would be exceeded by this request. "
+                        "Reuse any returned cached embeddings and continue in partial/bootstrap mode "
+                        "without additional embedding calls."
+                    ),
+                }
+        embeddings, cache_warning, usage = execute_planned_embedding_batch(
+            plan,
+            model=resolved_model,
+            cache_path=cache_path,
+            dimensions=resolved_dimensions,
+        )
+        self.embedding_spend.record_usage(usage, cache_warning=cache_warning)
         return {
             "count": len(embeddings),
             "cache_warning": cache_warning,
             "embeddings": embeddings,
+            "missing_ids": [],
+            "budget_exceeded": False,
+            "complete": True,
+            "remaining_budget_usd": remaining_budget_usd,
+            "estimated_request_cost_usd": usage.estimated_cost_usd,
+            "usage": usage.model_dump(),
         }
 
     def find_similar(
@@ -290,14 +413,27 @@ class Stage2Toolbox:
             raise RuntimeError(f"Missing required credential `{env_name}` for platform `{platform}`.")
         return value
 
+    def build_runtime_metadata(self) -> dict[str, Any]:
+        return {
+            "stage2_embedding_spend_cap_usd": self.embedding_spend_cap_usd,
+            "retrieval": self.retrieval.model_dump(),
+            "embedding": self.embedding_spend.model_dump(),
+        }
+
 
 def build_stage2_mcp_server(
     *,
     config: ParityConfig,
     repo_root: str | Path,
     env: dict[str, str] | None = None,
-) -> FastMCP:
-    toolbox = Stage2Toolbox(config=config, repo_root=repo_root, env=env)
+    embedding_spend_cap_usd: float | None = None,
+) -> Stage2MCPServerBundle:
+    toolbox = Stage2Toolbox(
+        config=config,
+        repo_root=repo_root,
+        env=env,
+        embedding_spend_cap_usd=embedding_spend_cap_usd,
+    )
     server = FastMCP("parity-stage2")
 
     @server.tool(name="search_eval_targets")
@@ -361,7 +497,7 @@ def build_stage2_mcp_server(
             boundary_threshold=boundary_threshold,
         )
 
-    return server
+    return Stage2MCPServerBundle(server=server, toolbox=toolbox)
 
 
 def _normalize_platform(platform: str) -> str:

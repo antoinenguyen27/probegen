@@ -60,8 +60,8 @@ similarity:
   boundary_threshold: 0.72
 
 generation:
-  max_probes_surfaced: 6
-  max_probes_generated: 12
+  proposal_probe_limit: 6
+  candidate_probe_pool_limit: 12
   diversity_limit_per_gap: 2
 
 approval:
@@ -72,7 +72,5 @@ auto_run:
   fail_on: "regression_guard"
   notify: "pr_comment"
 
-budgets:
-  stage1_usd: 0.5
-  stage2_usd: 0.75
-  stage3_usd: 1.0
+spend:
+  analysis_total_spend_cap_usd: 2.25

@@ -74,7 +74,7 @@ The Agent SDK gives Claude Code's full agent loop — codebase traversal, tool e
 - **Codebase variance is the hardest problem.** Users store prompts in Python constants, YAML files, markdown, Jinja templates, and environment variables. A custom traversal layer would need to anticipate every pattern. The Agent SDK encounters the actual codebase and reasons about what it finds.
 - **Structured message streaming.** `AssistantMessage`, `ResultMessage`, and `UserMessage` events allow parity to intercept outputs, validate intermediate results, and handle errors without stdout parsing.
 - **Deterministic write path.** Stage 4 stays outside the Agent SDK entirely, so approved-platform writes remain fast, auditable, and isolated from agent tool access.
-- **Cost control per stage.** `max_budget_usd` prevents runaway costs in CI.
+- **Spend control with stage-specific caps.** Parity derives stage caps from one total analysis spend cap, then passes the agent-stage caps into `max_budget_usd`.
 - **MCP first-class.** Platform integrations via MCP are native to the SDK, not shell-invoked.
 
 The Claude Agent SDK's CLI (`claude code --print ...`) is designed for one-shot scripting. Parity, however, uses the Agent SDK as a Python library to orchestrate multi-stage reasoning. This allows Parity to maintain state across stages, parse structured outputs, and implement approval gates — features that require programmatic control, not CLI automation.
@@ -359,7 +359,7 @@ async for message in query(
         can_use_tool=read_only_stage1_policy(repo_root),
         mcp_servers=[],          # no MCP in Stage 1
         max_turns=40,
-        max_budget_usd=0.50,
+        max_budget_usd=resolved_spend.stage1_agent_cap_usd,
         cwd=repo_root,
     )
 ):
@@ -532,7 +532,7 @@ async for message in query(
         tools=[],  # no built-in Bash or write tools
         mcp_servers={"parity_stage2": in_process_sdk_mcp_server()},
         max_turns=40,
-        max_budget_usd=0.75,
+        max_budget_usd=resolved_spend.stage2_agent_cap_usd,
         cwd=repo_root,
     )
 ):
@@ -612,6 +612,10 @@ PROCESS:
    then fetch_eval_cases for the chosen corpus.
 4. If relevant eval cases are found, call embed_batch and then prefer find_similar_batch
    for semantically coherent slices that share one artifact context and one resolved corpus.
+   - `embed_batch` may return `budget_exceeded: true`
+   - when that happens, stop requesting more embeddings
+   - you may still use any returned cached embeddings, but treat `missing_ids` as unembedded
+   - continue in degraded partial/bootstrap mode rather than failing the stage
 5. If relevant eval cases are found by any retrieval path, remain in coverage-aware mode:
    - set `coverage_summary.mode` to `coverage_aware`
    - set `coverage_summary.corpus_status` to `available`
@@ -621,7 +625,7 @@ PROCESS:
 7. For guardrail artifacts, analyze coverage in both directions:
    - Are there existing cases testing things the guardrail should catch?
    - Are there existing cases testing things the guardrail should allow through?
-8. If no relevant eval cases exist, switch to bootstrap mode:
+8. If no relevant eval cases exist, or the stage degrades before full comparison completes, switch to bootstrap mode when necessary:
    - mark `coverage_summary.mode` as `bootstrap`
    - mark `coverage_summary.corpus_status` as `empty` or `unavailable`
    - explain the reason in `coverage_summary.bootstrap_reason`
@@ -701,7 +705,7 @@ async for message in query(
         tools=[],                 # Stage 3 is pure generation from prompt context
         mcp_servers=[],           # no MCP in Stage 3
         max_turns=25,
-        max_budget_usd=1.00,
+        max_budget_usd=resolved_spend.stage3_agent_cap_usd,
         cwd=repo_root,
     )
 ):
@@ -798,8 +802,9 @@ For guardrail gaps, generate probes in both directions:
 - should_catch: an input/output that the guardrail should still flag (false negative test)
 - should_pass: an input/output that the guardrail should still allow (false positive test)
 
-Generate up to 20 candidate probes internally, then select the best {max_probes_surfaced} 
-based on quality criteria. Apply a diversity filter: no more than 2 probes per gap_id.
+Generate up to `candidate_probe_pool_limit` candidate probes and return the full candidate
+pool in `ProbeProposal.probes`. The host orchestrator reranks that pool, applies the
+diversity filter, and keeps at most `proposal_probe_limit` final proposal probes for review.
 
 Output ProbeProposal JSON only. No prose.
 ```
@@ -825,19 +830,12 @@ These steps happen in Python, not via agent tool calls. This separation keeps St
 | `ambiguity_probe` | Tests behavior when input is genuinely ambiguous under the new rule | When new rule has underspecified scope |
 | `judge_calibration_probe` | An agent output to be evaluated; tests the guardrail itself | For guardrail artifact changes only |
 
-### Probe Count Computation
+### Proposal Count Controls
 
-```python
-def compute_probe_count(manifest: BehaviorChangeManifest) -> int:
-    base = len(manifest.changes) * 3
-    risk_multiplier = {"low": 0.6, "medium": 1.0, "high": 1.4}[manifest.overall_risk]
-    if manifest.compound_change_detected:
-        risk_multiplier *= 1.3
-    raw = int(base * risk_multiplier)
-    return max(3, min(raw, 12))   # floor 3, ceiling 12
-```
-
-12 probes maximum surfaced to developer. A PR comment with more than 12 probes will not be reviewed.
+- `proposal_probe_limit` controls the final shortlist shown to the reviewer and written back on approval.
+- `candidate_probe_pool_limit` controls how many raw candidates Stage 3 may generate before host-side reranking.
+- Defaults: `proposal_probe_limit = 8`, `candidate_probe_pool_limit = 20`
+- If `candidate_probe_pool_limit` is omitted, Parity derives it automatically from `proposal_probe_limit`.
 
 ### Diversity Filter
 
@@ -846,7 +844,7 @@ After generation, before surfacing:
 2. Re-classify 0.72–0.87 scorers as `boundary_probe`
 3. Apply diversity cap: retain maximum 2 probes per `gap_id`
 4. Rank remaining by composite score (see Ranking below)
-5. Take top `max_probes_surfaced`
+5. Take top `proposal_probe_limit`
 
 If Stage 2 is in bootstrap mode and there is no existing eval corpus, skip the corpus duplicate-filter step and rank generated probes only by the quality criteria plus gap priority.
 
@@ -1259,7 +1257,9 @@ Each stage prompt is a Python function in `parity/prompts/` that assembles a str
 
 #### Token Budgets and Truncation Strategy
 
-Stage 3 has a total context budget of 80,000 tokens (well within claude-sonnet-4's 200k context window, leaving headroom for agent tool calls and response). Token allocation by section:
+Stage 3 uses an internal input-context packing limit rather than a user-facing token knob. The limit is derived from the model context window minus reserved response headroom, and the reserved response headroom grows with `candidate_probe_pool_limit`. At the default pool size of 20 candidates, the current input packing target is 80,000 tokens.
+
+Token allocation by section:
 
 | Section | Token Budget | Truncation Strategy |
 |---|---|---|
@@ -1274,7 +1274,7 @@ Stage 3 has a total context budget of 80,000 tokens (well within claude-sonnet-4
 | Trace samples | 6,000 | Random sample up to `trace_max_samples`, then truncate each to 300 tokens |
 | Nearest existing cases | 4,000 | Top 5 per gap, each truncated to 200 tokens |
 
-Token counting uses `tiktoken` with `cl100k_base` encoding. If total exceeds 80,000 tokens, fallback pass applies: reduce `good_examples` (3,000 → 1,500), reduce `bad_examples` (4,000 → 2,000), drop trace samples entirely. Fixed-budget sections are not reduced. No further retry.
+Token counting uses `tiktoken` with `cl100k_base` encoding. If the rendered prompt exceeds the derived Stage 3 input packing limit, the fallback pass applies: reduce `good_examples` (3,000 → 1,500), reduce `bad_examples` (4,000 → 2,000), and drop trace samples entirely. Fixed-budget sections are not reduced. No further retry.
 
 #### Stage 1 Rendering
 
@@ -1756,9 +1756,18 @@ similarity:
 
 # ── Probe Generation ─────────────────────────────────────────────────────────
 generation:
-  max_probes_surfaced: 8
-  max_probes_generated: 20
+  proposal_probe_limit: 8
+  candidate_probe_pool_limit: 20
   diversity_limit_per_gap: 2
+
+# ── Spend Caps ───────────────────────────────────────────────────────────────
+spend:
+  analysis_total_spend_cap_usd: 2.25
+  # Advanced expert overrides:
+  # stage1_agent_cap_usd: 0.7875
+  # stage2_agent_cap_usd: 0.45
+  # stage2_embedding_cap_usd: 0.3375
+  # stage3_agent_cap_usd: 0.675
 
 # ── Approval ─────────────────────────────────────────────────────────────────
 approval:
@@ -2072,45 +2081,56 @@ tests:
 | Stage 1 produces no changes | Post a minimal no-changes comment ("This PR does not modify any behavior-defining artifacts"). Exit 0. |
 | Stage 2 MCP connection failure | Continue with file-only fallback. Post warning in PR comment: "Could not connect to {platform}. Coverage analysis skipped; probes generated without coverage context." |
 | Stage 2 no dataset mapping | Post comment with specific mapping instructions. Stage 3 still runs without coverage context. |
-| Stage 2 mapped dataset exists but contains zero evals | Switch to starter mode. Post warning in PR comment: "No existing eval cases were found. Probes were generated as starter coverage from the diff and product context." |
-| Stage 2 no eval corpus exists at all | Switch to starter mode. Post warning in PR comment: "Running in starter mode — probes are grounded in your diff and product context. Add eval dataset mappings to unlock coverage-aware analysis." |
+| Stage 2 mapped dataset exists but contains zero evals | Switch to bootstrap mode. Post warning in PR comment: "No existing eval cases were found. Probes were generated as bootstrap coverage from the diff and product context." |
+| Stage 2 no eval corpus exists at all | Switch to bootstrap mode. Post warning in PR comment: "Running in bootstrap mode — probes are grounded in your diff and product context. Add eval dataset mappings to unlock coverage-aware analysis." |
 | Stage 3 all probes filtered as duplicates | Post comment: "All generated probes were too similar to existing evals. No new coverage gaps identified." |
 | Stage 3 produces < 3 probes after filtering | Post whatever was generated. No minimum enforcement. |
 | Stage 4 write failure | Post comment on merged PR: "Probe write failed: {error}. Probes available at {artifact_path}." Exit non-zero to flag the failure. |
 | Anthropic API rate limit | Retry with exponential backoff × 3, then fail gracefully as above. |
 
-### Agent SDK Cost Control and Budget Handling
+### Spend Caps and Agent SDK Budget Handling
 
-Parity applies per-stage `max_budget_usd` caps to prevent runaway costs in CI. The Agent SDK reports budget-exceeded conditions distinctly:
+Parity exposes one optional total analysis spend cap, then derives stage-specific caps from it:
 
-- **`error_max_budget_usd`** (not an error flag) — Budget ceiling hit before completion. Partial work may have been done; parity attempts partial result extraction.
+- Stage 1 agent spend
+- Stage 2 agent spend
+- Stage 2 embedding spend
+- Stage 3 agent spend
+
+The agent-stage caps are passed into the Agent SDK as `max_budget_usd`. The Stage 2 embedding cap is enforced in the host-owned MCP toolbox rather than by the Agent SDK.
+
+The Agent SDK reports spend-cap conditions distinctly:
+
+- **`error_max_budget_usd`** (not an error flag) — The agent-stage spend ceiling hit before completion. Partial work may have been done; parity attempts partial result extraction and, for Stage 2, falls back to a degraded valid manifest.
 - **`is_error == True`** — Genuine execution failure (MCP connection dropped, invalid response, etc.).
 - **Rate limit errors** — Surface as `AssistantMessage.error == "rate_limit"`. Parity retries up to 3 times with exponential backoff (30s, 60s, 120s).
 
-**Per-stage budgets and defaults:**
+**Default spend split from `analysis_total_spend_cap_usd = 2.25`:**
 
-| Stage | `max_budget_usd` | `max_turns` | Justification |
-|---|---|---|---|
-| Stage 1 | 0.50 | 40 | Agent-driven codebase discovery: reads changed files, analyzes diffs, may fetch additional files via tools. Higher turn count for larger PRs. |
-| Stage 2 | 0.75 | 40 | Host-owned eval retrieval/discovery calls + embedding/similarity passes + gap analysis. |
-| Stage 3 | 1.00 | 25 | Single-pass probe generation from injected context; no tool traversal needed. |
+| Spend bucket | Default cap | Justification |
+|---|---|---|
+| Stage 1 agent | 0.7875 | Open-ended codebase discovery: reads changed files, analyzes diffs, and may fetch additional files via tools. |
+| Stage 2 agent | 0.45 | Coverage analysis reasoning over mappings, retrieval outcomes, and similarity results. |
+| Stage 2 embedding | 0.3375 | Host-owned OpenAI embedding spend for coverage comparison. |
+| Stage 3 agent | 0.675 | Pure probe generation from curated context; no tool traversal. |
 
-These are configurable in `parity.yaml` under `budgets:`. Increase if stages time out on large diffs or complex repos.
+These are configurable in `parity.yaml` under `spend:`. Most users should only set `analysis_total_spend_cap_usd`; stage-specific overrides are expert-only.
 
 ### Complete Error Handling Table
 
 | Failure | Subtype / Condition | PR Comment Behaviour | Exit Code |
 |---|---|---|---|
-| Stage 1 budget exceeded | `error_max_budget_usd` | "Parity analysis exceeded cost limit. No probes generated. Increase `budgets.stage1_usd` in parity.yaml." | 3 |
+| Stage 1 spend cap exceeded | `error_max_budget_usd` | "Parity analysis exceeded the Stage 1 spend cap. No probes generated." | 3 |
 | Stage 1 SDK crash | `is_error == True` | "Parity failed during change analysis. See Actions log." | 1 |
 | Stage 1 git error | `get-behavior-diff` returns 1; run-stage wraps as no changes | Silent exit (no comment, no probes) | 0 |
-| Stage 2 budget exceeded | `error_max_budget_usd` | Warning + partial gaps if extractable, otherwise: "Coverage analysis exceeded cost limit. Probes generated without full coverage context." | 3 (non-fatal, Stage 3 continues) |
+| Stage 2 agent spend cap exceeded | `error_max_budget_usd` | Warning + degraded valid manifest derived from Stage 1 and host-side retrieval state | 0 (Stage 3 continues) |
+| Stage 2 embedding spend cap exceeded | `embed_batch.budget_exceeded == true` | No hard failure; Stage 2 degrades to partial/bootstrap analysis and continues | 0 (Stage 3 continues) |
 | Stage 2 MCP connection failure | `AssistantMessage.error` populated | Warning in PR comment: "Could not connect to {platform}. Coverage analysis skipped; probes generated without coverage context." | 0 (continue to Stage 3) |
-| Stage 3 budget exceeded | `error_max_budget_usd` | "Probe generation exceeded cost limit. Partial probes (if any) shown below." | 3 |
+| Stage 3 spend cap exceeded | `error_max_budget_usd` | "Probe generation exceeded the Stage 3 spend cap. Partial probes (if any) shown below." | 3 |
 | Stage 3 all probes filtered | Empty probes array after similarity filtering | "All generated probes were too similar to existing coverage. No new gaps identified." | 0 |
 | Stage 3 < 3 probes generated | After filtering, fewer than 3 probes remain | Post whatever was generated; no minimum enforcement. | 0 |
 | Stage 4 write failure | Platform SDK exception | Post to merged PR: "Probe write failed: {error}. Probes available at {artifact_path}." | 1 |
-| Rate limit (any stage) | `AssistantMessage.error == "rate_limit"` | Retry automatically × 3 with exponential backoff. After 3 failures, treat as budget exceeded. | 3 |
+| Rate limit (any stage) | `AssistantMessage.error == "rate_limit"` | Retry automatically × 3 with exponential backoff. After 3 failures, treat as spend cap exhaustion. | 3 |
 | GitHub API error (posting PR comment) | `httpx.HTTPStatusError` | Log to stderr. Do NOT fail the run — artifact is still uploaded to Actions. | 0 |
 
 ### Missing Dataset Mapping Warning
@@ -2209,7 +2229,7 @@ The following are explicitly deferred to future versions:
 | **0** | All | Success (or non-blocking warning) |
 | **1** | 1, 2, 3, 4 | Agent SDK error, MCP connection failure, API error, partial write failure |
 | **2** | 2, 3 | Output JSON failed schema validation; invalid proposal JSON (write-probes) |
-| **3** | 1, 2, 3 | Budget exceeded (`error_max_budget_usd`) |
+| **3** | 1, 3 | Agent spend cap exceeded (`error_max_budget_usd`) |
 | **4** | 1 | Stage-specific failure (e.g., git error, config parsing) |
 | **5** | 1, 2, 3 | Missing required inputs (e.g., `--pr-number` for Stage 1) |
 
@@ -2224,9 +2244,9 @@ The following are explicitly deferred to future versions:
 | `mappings` | `parity.yaml` | Links between artifacts and eval datasets for coverage analysis |
 | `embedding` | `parity.yaml` | Embedding model, dimensions, cache path (OpenAI only) |
 | `similarity` | `parity.yaml` | Duplicate and boundary thresholds (default 0.88 and 0.72) |
-| `generation` | `parity.yaml` | Max probes surfaced and generated per run; diversity limits |
+| `generation` | `parity.yaml` | Final proposal size, candidate pool size, and diversity limits |
 | `approval` | `parity.yaml` | GitHub label name for writeback approval (default: `parity:approve`) |
-| `budgets` | `parity.yaml` | Per-stage cost caps in USD (default: 0.50, 0.75, 1.00) |
+| `spend` | `parity.yaml` | Overall analysis spend cap plus expert-only stage-specific overrides |
 | `auto_run` | `parity.yaml` | Stage 4 auto-run policy (enabled, fail_on condition, notification mode) |
 
 ### Data Model Overview
@@ -2240,18 +2260,19 @@ All models use **Pydantic v2** (`BaseModel`) for validation and JSON serializati
 | `CoverageGapManifest` | Stage 2 output | Coverage gaps, nearest existing evals, bootstrap flags |
 | `ProbeProposal` | Stage 3 output | Ranked probe candidates with rationale and metadata |
 
-### Stage Costs and Budgets
+### Stage Spend Defaults
 
 Typical costs per PR run (using claude-sonnet-4):
 
-| Stage | Default Budget | Typical Cost | Max Turns |
+| Stage / bucket | Default cap | Typical Cost | Max Turns |
 |-------|---|---|---|
-| Stage 1 (Change detection) | $0.50 | $0.05–0.30 | 40 |
-| Stage 2 (Coverage analysis) | $0.75 | $0.10–0.50 | 40 |
-| Stage 3 (Probe generation) | $1.00 | $0.10–0.60 | 25 |
+| Stage 1 agent (Change detection) | $0.7875 | $0.05–0.30 | 40 |
+| Stage 2 agent (Coverage analysis) | $0.45 | $0.05–0.25 | 40 |
+| Stage 2 embedding | $0.3375 | $0.01–0.20 | — |
+| Stage 3 agent (Probe generation) | $0.675 | $0.10–0.60 | 25 |
 | **Total** | **$2.25** | **$0.25–1.40** | — |
 
-Increase budget caps in `parity.yaml` if stages consistently exceed costs (especially for large repos with many non-hint-matched files).
+Increase `spend.analysis_total_spend_cap_usd` if runs consistently exhaust spend on large diffs or broad eval corpora. Use stage-specific overrides only if you need expert-level control.
 
 ### Error Classification Quick Lookup
 

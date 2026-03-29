@@ -239,6 +239,19 @@ async def _run_query(
             stage=stage_num,
             cost_usd=result_message.total_cost_usd,
             partial_result=partial,
+            details={
+                "subtype": result_message.subtype,
+                "assistant_messages": assistant_message_count,
+                "observed_tool_uses": sum(observed_tool_counts.values()),
+                "tools_observed": [
+                    {
+                        "name": tool_name,
+                        "count": observed_tool_counts[tool_name],
+                        "approx_duration_ms": observed_tool_durations_ms.get(tool_name, 0),
+                    }
+                    for tool_name in sorted(observed_tool_counts)
+                ],
+            },
         )
     if result_message.subtype == "error_max_turns":
         partial = attempt_partial_extraction(result_message.result)
@@ -247,6 +260,19 @@ async def _run_query(
             stage=stage_num,
             cost_usd=result_message.total_cost_usd,
             partial_result=partial,
+            details={
+                "subtype": result_message.subtype,
+                "assistant_messages": assistant_message_count,
+                "observed_tool_uses": sum(observed_tool_counts.values()),
+                "tools_observed": [
+                    {
+                        "name": tool_name,
+                        "count": observed_tool_counts[tool_name],
+                        "approx_duration_ms": observed_tool_durations_ms.get(tool_name, 0),
+                    }
+                    for tool_name in sorted(observed_tool_counts)
+                ],
+            },
         )
     if result_message.subtype == "error_max_structured_output_retries":
         truncated = (

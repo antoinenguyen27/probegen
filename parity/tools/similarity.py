@@ -90,16 +90,6 @@ def classify_embeddings_against_corpus(
         )
     return payloads
 
-
-def compute_probe_count(manifest) -> int:
-    base = len(manifest.changes) * 3
-    risk_multiplier = {"low": 0.6, "medium": 1.0, "high": 1.4}[manifest.overall_risk]
-    if manifest.compound_change_detected:
-        risk_multiplier *= 1.3
-    raw = int(base * risk_multiplier)
-    return max(3, min(raw, 12))
-
-
 def score_probe(probe: ProbeCase, gaps: list[CoverageGap]) -> float:
     weights = {
         "specificity": 0.30,

@@ -25,6 +25,7 @@ def run_stage1(
 ) -> StageRunResult:
     run_id = f"stage1-{int(time.time())}"
     timestamp = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    resolved_spend = config.resolve_spend_caps()
     prompt = render_stage1_prompt(raw_change_data, context)
 
     artifact_count = len(raw_change_data.get("hint_matched_artifacts", []))
@@ -43,7 +44,7 @@ def run_stage1(
     options = build_stage1_options(
         cwd=str(cwd or Path.cwd()),
         max_turns=40,
-        max_budget_usd=config.budgets.stage1_usd,
+        max_budget_usd=resolved_spend.stage1_agent_cap_usd,
         output_schema=output_schema,
     )
     result = asyncio.run(
@@ -60,5 +61,16 @@ def run_stage1(
             },
         )
     )
-    result.extras = {**(result.extras or {}), "prompt_tokens": prompt_tokens}
+    result.extras = {
+        **(result.extras or {}),
+        "prompt_tokens": prompt_tokens,
+        "resolved_spend_caps": {
+            "analysis_total_spend_cap_usd": resolved_spend.analysis_total_spend_cap_usd,
+            "stage1_agent_cap_usd": resolved_spend.stage1_agent_cap_usd,
+            "stage2_agent_cap_usd": resolved_spend.stage2_agent_cap_usd,
+            "stage2_embedding_cap_usd": resolved_spend.stage2_embedding_cap_usd,
+            "stage3_agent_cap_usd": resolved_spend.stage3_agent_cap_usd,
+            "source": resolved_spend.source,
+        },
+    }
     return result

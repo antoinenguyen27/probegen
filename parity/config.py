@@ -1,16 +1,24 @@
 from __future__ import annotations
 
 import fnmatch
+import math
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Self
 
 import yaml
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from parity.errors import ConfigError
 from parity.models._base import ParityModel
 
 PlatformName = Literal["langsmith", "braintrust", "arize_phoenix", "promptfoo"]
+
+DEFAULT_ANALYSIS_TOTAL_SPEND_CAP_USD = 2.25
+DEFAULT_STAGE1_AGENT_SPEND_RATIO = 0.35
+DEFAULT_STAGE2_AGENT_SPEND_RATIO = 0.20
+DEFAULT_STAGE2_EMBEDDING_SPEND_RATIO = 0.15
+DEFAULT_STAGE3_AGENT_SPEND_RATIO = 0.30
 
 
 class ArtifactDetectionConfig(ParityModel):
@@ -91,9 +99,38 @@ class SimilarityConfig(ParityModel):
 
 
 class GenerationConfig(ParityModel):
-    max_probes_surfaced: int = 8
-    max_probes_generated: int = 20
+    proposal_probe_limit: int = 8
+    candidate_probe_pool_limit: int | None = None
     diversity_limit_per_gap: int = 2
+
+    @field_validator("proposal_probe_limit", "diversity_limit_per_gap")
+    @classmethod
+    def validate_positive_ints(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("generation limits must be positive integers")
+        return value
+
+    @field_validator("candidate_probe_pool_limit")
+    @classmethod
+    def validate_candidate_probe_pool_limit(cls, value: int | None) -> int | None:
+        if value is not None and value <= 0:
+            raise ValueError("candidate_probe_pool_limit must be positive when provided")
+        return value
+
+    @model_validator(mode="after")
+    def validate_generation_relationships(self) -> "GenerationConfig":
+        if (
+            self.candidate_probe_pool_limit is not None
+            and self.candidate_probe_pool_limit < self.proposal_probe_limit
+        ):
+            raise ValueError("candidate_probe_pool_limit must be greater than or equal to proposal_probe_limit")
+        return self
+
+    def resolve_candidate_probe_pool_limit(self) -> int:
+        if self.candidate_probe_pool_limit is not None:
+            return self.candidate_probe_pool_limit
+        derived = math.ceil(self.proposal_probe_limit * 2.5)
+        return max(12, min(derived, 24))
 
 
 class ApprovalConfig(ParityModel):
@@ -108,10 +145,63 @@ class AutoRunConfig(ParityModel):
     notify: str | None = "pr_comment"
 
 
-class BudgetsConfig(ParityModel):
-    stage1_usd: float = 0.50
-    stage2_usd: float = 0.75
-    stage3_usd: float = 1.00
+class SpendConfig(ParityModel):
+    analysis_total_spend_cap_usd: float | None = None
+    stage1_agent_cap_usd: float | None = None
+    stage2_agent_cap_usd: float | None = None
+    stage2_embedding_cap_usd: float | None = None
+    stage3_agent_cap_usd: float | None = None
+
+    @field_validator(
+        "analysis_total_spend_cap_usd",
+        "stage1_agent_cap_usd",
+        "stage2_agent_cap_usd",
+        "stage2_embedding_cap_usd",
+        "stage3_agent_cap_usd",
+    )
+    @classmethod
+    def validate_positive_optional_floats(cls, value: float | None) -> float | None:
+        if value is not None and value <= 0:
+            raise ValueError("spend caps must be positive when provided")
+        return value
+
+    @model_validator(mode="after")
+    def validate_stage_override_shape(self) -> "SpendConfig":
+        stage_caps = [
+            self.stage1_agent_cap_usd,
+            self.stage2_agent_cap_usd,
+            self.stage2_embedding_cap_usd,
+            self.stage3_agent_cap_usd,
+        ]
+        any_stage_caps = any(value is not None for value in stage_caps)
+        all_stage_caps = all(value is not None for value in stage_caps)
+
+        if any_stage_caps and not all_stage_caps:
+            raise ValueError(
+                "stage-specific spend overrides must all be set together: "
+                "stage1_agent_cap_usd, stage2_agent_cap_usd, "
+                "stage2_embedding_cap_usd, and stage3_agent_cap_usd"
+            )
+
+        if all_stage_caps:
+            total = sum(value for value in stage_caps if value is not None)
+            configured_total = self.analysis_total_spend_cap_usd
+            if configured_total is not None and not math.isclose(configured_total, total, abs_tol=0.01):
+                raise ValueError(
+                    "analysis_total_spend_cap_usd must match the sum of the explicit stage-specific spend caps"
+                )
+
+        return self
+
+
+@dataclass(slots=True, frozen=True)
+class ResolvedSpendCaps:
+    analysis_total_spend_cap_usd: float
+    stage1_agent_cap_usd: float
+    stage2_agent_cap_usd: float
+    stage2_embedding_cap_usd: float
+    stage3_agent_cap_usd: float
+    source: Literal["default_total", "explicit_total", "explicit_stage_overrides"]
 
 
 class ParityConfig(ParityModel):
@@ -126,7 +216,7 @@ class ParityConfig(ParityModel):
     generation: GenerationConfig = Field(default_factory=GenerationConfig)
     approval: ApprovalConfig = Field(default_factory=ApprovalConfig)
     auto_run: AutoRunConfig = Field(default_factory=AutoRunConfig)
-    budgets: BudgetsConfig = Field(default_factory=BudgetsConfig)
+    spend: SpendConfig = Field(default_factory=SpendConfig)
 
     @classmethod
     def load(cls, path: str | Path = "parity.yaml", *, allow_missing: bool = False) -> Self:
@@ -158,3 +248,34 @@ class ParityConfig(ParityModel):
             if mapping.matches(artifact_path):
                 return mapping
         return None
+
+    def resolve_spend_caps(self) -> ResolvedSpendCaps:
+        spend = self.spend
+        stage_caps = [
+            spend.stage1_agent_cap_usd,
+            spend.stage2_agent_cap_usd,
+            spend.stage2_embedding_cap_usd,
+            spend.stage3_agent_cap_usd,
+        ]
+        if all(value is not None for value in stage_caps):
+            return ResolvedSpendCaps(
+                analysis_total_spend_cap_usd=sum(value for value in stage_caps if value is not None),
+                stage1_agent_cap_usd=spend.stage1_agent_cap_usd or 0.0,
+                stage2_agent_cap_usd=spend.stage2_agent_cap_usd or 0.0,
+                stage2_embedding_cap_usd=spend.stage2_embedding_cap_usd or 0.0,
+                stage3_agent_cap_usd=spend.stage3_agent_cap_usd or 0.0,
+                source="explicit_stage_overrides",
+            )
+
+        total = spend.analysis_total_spend_cap_usd or DEFAULT_ANALYSIS_TOTAL_SPEND_CAP_USD
+        source: Literal["default_total", "explicit_total"] = (
+            "explicit_total" if spend.analysis_total_spend_cap_usd is not None else "default_total"
+        )
+        return ResolvedSpendCaps(
+            analysis_total_spend_cap_usd=total,
+            stage1_agent_cap_usd=total * DEFAULT_STAGE1_AGENT_SPEND_RATIO,
+            stage2_agent_cap_usd=total * DEFAULT_STAGE2_AGENT_SPEND_RATIO,
+            stage2_embedding_cap_usd=total * DEFAULT_STAGE2_EMBEDDING_SPEND_RATIO,
+            stage3_agent_cap_usd=total * DEFAULT_STAGE3_AGENT_SPEND_RATIO,
+            source=source,
+        )

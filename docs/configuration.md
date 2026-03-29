@@ -7,23 +7,48 @@
 - An Anthropic API key
 - An eval platform API key — only needed for direct platform integration or automatic writeback
 
-## Cost control
+## Spend caps
 
-Each stage has a configurable Anthropic API spend budget (see `budgets:` in `parity.yaml`). Typical costs per PR:
+Parity does not require any spend configuration for normal usage. If you omit `spend:` in `parity.yaml`, it falls back to an internal default total analysis cap.
 
-- Stage 1 (change detection): $0.05–0.30
-- Stage 2 (coverage analysis): $0.10–0.50
-- Stage 3 (eval generation): $0.10–0.60
+For standard users, the only spend knob that matters is:
 
-Increase budget limits if stages time out on large diffs or complex repos.
+- `spend.analysis_total_spend_cap_usd`
+
+Parity allocates that total across:
+
+- Stage 1 agent spend
+- Stage 2 agent spend
+- Stage 2 embedding spend
+- Stage 3 agent spend
+
+Advanced users can override the four stage-specific caps directly, but they are expert-only controls.
+
+Important scope note:
+
+- `analysis_total_spend_cap_usd` is a true Parity analysis spend cap, not just an Agent SDK cap.
+- Stage 2 embedding spend is tracked separately from Stage 2 agent spend.
+- Stage 3 also has an internal context-packing token limit, but that is not a normal user-facing configuration knob.
+
+Typical overall spend for a single PR run is still usually modest, but exact spend depends on diff size, mapping quality, eval corpus size, and how much retrieval or generation work each stage performs.
 
 ## Advanced configuration
 
 The full configuration reference is available in [parity.yaml.example](../parity.yaml.example).
 
+The main reviewer-facing generation knob is:
+
+- `generation.proposal_probe_limit`
+
+Parity also supports:
+
+- `generation.candidate_probe_pool_limit`
+
+That controls internal search breadth before reranking and diversity filtering. Most users should leave it alone and tune only the final proposal size.
+
 ## Context files
 
-Parity works without context files, but eval quality drops significantly. At minimum, fill in product context and known failure modes. This matters even more in starter mode, where Parity has no existing eval corpus to compare against.
+Parity works without context files, but eval quality drops significantly. At minimum, fill in product context and known failure modes. This matters even more in bootstrap mode, where Parity has no existing eval corpus to compare against.
 
 Run `parity init` to generate context stubs, then fill in:
 

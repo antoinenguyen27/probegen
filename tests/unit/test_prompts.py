@@ -74,6 +74,8 @@ def test_stage2_prompt_includes_bootstrap_instructions() -> None:
     assert "`search_eval_targets`" in prompt
     assert "`fetch_eval_cases`" in prompt
     assert "`embed_batch`" in prompt
+    assert "`budget_exceeded: true`" in prompt
+    assert "returned cached embeddings" in prompt
     assert "`find_similar_batch`" in prompt
     assert "do not flatten unrelated artifacts or unrelated datasets into one batch" in prompt
     assert '"target": "answer-regression"' in prompt
@@ -127,9 +129,13 @@ def test_stage3_prompt_describes_bootstrap_mode() -> None:
             ],
         },
         context,
-        max_probes_surfaced=4,
+        proposal_probe_limit=4,
+        candidate_probe_pool_limit=10,
     )
 
     assert "COVERAGE SUMMARY" in prompt
     assert '"mode": "bootstrap"' in prompt
     assert "there is no usable eval corpus for comparison" in prompt
+    assert "Generate up to 10 candidate probes" in prompt
+    assert "keep at most 4 final proposal probes" in prompt
+    assert "Return the full candidate pool in `probes`" in prompt

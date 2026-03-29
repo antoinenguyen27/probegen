@@ -33,7 +33,7 @@ def find_similar_command(
     candidate = json.loads(candidate_path.read_text(encoding="utf-8"))
     corpus = json.loads(corpus_path.read_text(encoding="utf-8"))
     try:
-        embedded_candidate, _ = embed_batch(
+        embedded_candidate, _, _usage = embed_batch(
             [candidate],
             model=model,
             cache_path=cache_path,

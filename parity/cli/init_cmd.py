@@ -12,19 +12,19 @@ import yaml
 from parity.config import (
     ApprovalConfig,
     ArtifactDetectionConfig,
+    ArizePhoenixPlatformConfig,
     AutoRunConfig,
-    BudgetsConfig,
+    BraintrustPlatformConfig,
     ContextConfig,
     EmbeddingConfig,
     GenerationConfig,
+    ParityConfig,
     LangSmithPlatformConfig,
-    BraintrustPlatformConfig,
-    ArizePhoenixPlatformConfig,
+    MappingConfig,
     PlatformsConfig,
     PromptfooPlatformConfig,
-    ParityConfig,
     SimilarityConfig,
-    MappingConfig,
+    SpendConfig,
 )
 
 IGNORE_DIRS = {".git", ".venv", "venv", "node_modules", "__pycache__"}
@@ -569,10 +569,14 @@ def init_command(context_only: bool, dry_run: bool) -> None:
             generation=GenerationConfig(),
             approval=ApprovalConfig(),
             auto_run=AutoRunConfig(),
-            budgets=BudgetsConfig(),
+            spend=SpendConfig(),
         )
 
-        config_yaml = yaml.safe_dump(config.model_dump(mode="json"), sort_keys=False, allow_unicode=True)
+        config_yaml = yaml.safe_dump(
+            config.model_dump(mode="json", exclude_none=True),
+            sort_keys=False,
+            allow_unicode=True,
+        )
         if dry_run:
             click.echo("Would write parity.yaml")
             click.echo(config_yaml)

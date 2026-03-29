@@ -25,7 +25,7 @@ def embed_batch_command(
 ) -> None:
     payload = json.loads(inputs_path.read_text(encoding="utf-8"))
     try:
-        embeddings, cache_warning = embed_batch(
+        embeddings, cache_warning, _usage = embed_batch(
             payload,
             model=model,
             cache_path=cache_path,

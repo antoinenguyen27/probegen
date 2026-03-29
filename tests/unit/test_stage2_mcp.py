@@ -67,8 +67,8 @@ def test_stage2_toolbox_rejects_promptfoo_paths_outside_repo(tmp_path: Path) -> 
 
 
 def test_stage2_server_exposes_expected_host_owned_tools(tmp_path: Path) -> None:
-    server = build_stage2_mcp_server(config=ParityConfig(), repo_root=tmp_path)
-    tool_names = sorted(tool.name for tool in asyncio.run(server.list_tools()))
+    bundle = build_stage2_mcp_server(config=ParityConfig(), repo_root=tmp_path)
+    tool_names = sorted(tool.name for tool in asyncio.run(bundle.server.list_tools()))
 
     assert tool_names == [
         "embed_batch",
@@ -80,7 +80,22 @@ def test_stage2_server_exposes_expected_host_owned_tools(tmp_path: Path) -> None
 
 
 def test_stage2_server_exposes_low_level_mcp_instance_for_sdk_transport(tmp_path: Path) -> None:
-    server = build_stage2_mcp_server(config=ParityConfig(), repo_root=tmp_path)
+    bundle = build_stage2_mcp_server(config=ParityConfig(), repo_root=tmp_path)
 
-    assert hasattr(server, "_mcp_server")
-    assert hasattr(server._mcp_server, "request_handlers")
+    assert hasattr(bundle.server, "_mcp_server")
+    assert hasattr(bundle.server._mcp_server, "request_handlers")
+
+
+def test_stage2_toolbox_blocks_embedding_request_when_spend_cap_would_be_exceeded(tmp_path: Path) -> None:
+    toolbox = Stage2Toolbox(
+        config=ParityConfig(),
+        repo_root=tmp_path,
+        embedding_spend_cap_usd=0.0,
+    )
+
+    payload = toolbox.embed_batch([{"id": "case_1", "text": "Hello from a new eval case"}])
+
+    assert payload["budget_exceeded"] is True
+    assert payload["count"] == 0
+    assert payload["missing_ids"] == ["case_1"]
+    assert toolbox.build_runtime_metadata()["embedding"]["blocked_request_count"] == 1

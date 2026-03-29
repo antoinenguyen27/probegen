@@ -31,7 +31,7 @@ parity init
 
 `parity init` generates `parity.yaml`, a GitHub Actions workflow, and `context/` stubs. Fill in your context files, add your API keys as GitHub secrets, and open a PR that touches a prompt.
 
-See [docs/configuration.md](docs/configuration.md) for prerequisites, cost control, and the full configuration reference.
+See [docs/configuration.md](docs/configuration.md) for prerequisites, spend caps, proposal-count controls, and the full configuration reference.
 
 ## Try it on a real example
 

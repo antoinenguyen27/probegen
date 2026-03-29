@@ -56,8 +56,8 @@ similarity:
   duplicate_threshold: 0.9
   boundary_threshold: 0.7
 generation:
-  max_probes_surfaced: 8
-  max_probes_generated: 20
+  proposal_probe_limit: 8
+  candidate_probe_pool_limit: 20
   diversity_limit_per_gap: 2
 approval:
   label: parity:approve
@@ -65,24 +65,31 @@ auto_run:
   enabled: true
   fail_on: regression_guard
   notify: pr_comment
-budgets:
-  stage1_usd: 0.5
-  stage2_usd: 0.75
-  stage3_usd: 1.0
+spend:
+  analysis_total_spend_cap_usd: 3.0
 """.strip(),
         encoding="utf-8",
     )
 
     config = ParityConfig.load(config_path)
+    resolved_spend = config.resolve_spend_caps()
 
     assert config.context.trace_max_samples == 7
     assert config.embedding.dimensions == 256
+    assert config.generation.proposal_probe_limit == 8
+    assert config.generation.resolve_candidate_probe_pool_limit() == 20
     assert config.find_mapping("prompts/foo/bar.md") is not None
+    assert resolved_spend.analysis_total_spend_cap_usd == pytest.approx(3.0)
+    assert resolved_spend.stage1_agent_cap_usd == pytest.approx(1.05)
+    assert resolved_spend.stage2_agent_cap_usd == pytest.approx(0.6)
+    assert resolved_spend.stage2_embedding_cap_usd == pytest.approx(0.45)
+    assert resolved_spend.stage3_agent_cap_usd == pytest.approx(0.9)
 
 
 def test_config_loads_defaults_when_missing_allowed() -> None:
     config = ParityConfig.load("missing.yaml", allow_missing=True)
     assert config.embedding.model == "text-embedding-3-small"
+    assert config.resolve_spend_caps().analysis_total_spend_cap_usd == pytest.approx(2.25)
 
 
 def test_config_missing_raises_by_default() -> None:
@@ -93,6 +100,33 @@ def test_config_missing_raises_by_default() -> None:
 def test_config_invalid_threshold_raises(tmp_path: Path) -> None:
     config_path = tmp_path / "parity.yaml"
     config_path.write_text("similarity:\n  duplicate_threshold: 1.5\n", encoding="utf-8")
+
+    with pytest.raises(ConfigError):
+        ParityConfig.load(config_path)
+
+
+def test_generation_candidate_probe_pool_limit_auto_derives() -> None:
+    config = ParityConfig.model_validate(
+        {
+            "generation": {
+                "proposal_probe_limit": 9,
+            }
+        }
+    )
+
+    assert config.generation.resolve_candidate_probe_pool_limit() == 23
+
+
+def test_stage_spend_overrides_must_be_complete(tmp_path: Path) -> None:
+    config_path = tmp_path / "parity.yaml"
+    config_path.write_text(
+        """
+spend:
+  stage1_agent_cap_usd: 1.0
+  stage2_agent_cap_usd: 0.5
+""".strip(),
+        encoding="utf-8",
+    )
 
     with pytest.raises(ConfigError):
         ParityConfig.load(config_path)

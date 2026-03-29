@@ -33,6 +33,10 @@ PROCESS:
 3. For each artifact with `mapping_status` `unresolved`, you may use `search_eval_targets` for limited same-platform discovery
    and then `fetch_eval_cases` to load the chosen corpus.
 4. If you retrieve one or more existing eval cases, call `embed_batch` to embed them.
+   - `embed_batch` may return `budget_exceeded: true`
+   - when that happens, stop requesting more embeddings
+   - you may still use any returned cached embeddings, but treat `missing_ids` as not embedded
+   - continue with a degraded partial/bootstrap analysis instead of failing the stage
 5. When comparing multiple risk flags or predicted impacts against the same resolved corpus, prefer
    `find_similar_batch` so you can evaluate that scoped slice in one pass while preserving
    per-candidate results. Use `find_similar` only when you truly have a single candidate.
