@@ -5,6 +5,7 @@ import click
 from parity import __version__
 from parity.cli.doctor_cmd import doctor_command
 from parity.cli.embed_batch import embed_batch_command
+from parity.cli.find_similar_batch import find_similar_batch_command
 from parity.cli.find_similar import find_similar_command
 from parity.cli.get_behavior_diff import get_behavior_diff_command
 from parity.cli.init_cmd import init_command
@@ -23,6 +24,7 @@ def cli() -> None:
 
 cli.add_command(doctor_command)
 cli.add_command(embed_batch_command)
+cli.add_command(find_similar_batch_command)
 cli.add_command(find_similar_command)
 cli.add_command(get_behavior_diff_command)
 cli.add_command(init_command)

@@ -66,5 +66,5 @@ def run_stage1(
             },
         )
     )
-    result.extras = {"prompt_tokens": prompt_tokens}
+    result.extras = {**(result.extras or {}), "prompt_tokens": prompt_tokens}
     return result

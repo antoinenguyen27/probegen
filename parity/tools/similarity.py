@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Iterable
+from typing import Any, Iterable
 
 import numpy as np
 
@@ -34,6 +34,61 @@ def classify_similarity(
     if score >= 0.50:
         return "related"
     return "novel"
+
+
+def classify_embedding_against_corpus(
+    candidate_embedding: Iterable[float],
+    corpus: list[dict[str, Any]],
+    *,
+    candidate_id: str,
+    duplicate_threshold: float,
+    boundary_threshold: float,
+) -> dict[str, Any]:
+    results: list[dict[str, Any]] = []
+    for item in corpus:
+        score = cosine_similarity(candidate_embedding, item["embedding"])
+        results.append(
+            {
+                "corpus_id": item["id"],
+                "similarity": score,
+                "classification": classify_similarity(
+                    score,
+                    duplicate_threshold=duplicate_threshold,
+                    boundary_threshold=boundary_threshold,
+                ),
+            }
+        )
+
+    results.sort(key=lambda item: item["similarity"], reverse=True)
+    top_match = results[0] if results else None
+    return {
+        "candidate_id": candidate_id,
+        "results": results,
+        "top_match": top_match,
+        "max_similarity": top_match["similarity"] if top_match else 0.0,
+        "overall_classification": top_match["classification"] if top_match else "novel",
+    }
+
+
+def classify_embeddings_against_corpus(
+    candidates: list[dict[str, Any]],
+    corpus: list[dict[str, Any]],
+    *,
+    duplicate_threshold: float,
+    boundary_threshold: float,
+) -> list[dict[str, Any]]:
+    payloads: list[dict[str, Any]] = []
+    for candidate in candidates:
+        payloads.append(
+            classify_embedding_against_corpus(
+                candidate["embedding"],
+                corpus,
+                candidate_id=candidate["id"],
+                duplicate_threshold=duplicate_threshold,
+                boundary_threshold=boundary_threshold,
+            )
+        )
+    return payloads
 
 
 def compute_probe_count(manifest) -> int:

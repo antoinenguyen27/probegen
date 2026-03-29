@@ -109,5 +109,5 @@ def run_stage3(
 
     if context.warnings:
         result.data.warnings.extend(context.warnings)
-    result.extras = {"prompt_tokens": prompt_tokens}
+    result.extras = {**(result.extras or {}), "prompt_tokens": prompt_tokens}
     return result

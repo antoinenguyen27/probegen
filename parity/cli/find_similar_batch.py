@@ -2,17 +2,16 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
 
 import click
 
 from parity.errors import EmbeddingError
 from parity.tools.embedding import embed_batch
-from parity.tools.similarity import classify_embedding_against_corpus
+from parity.tools.similarity import classify_embeddings_against_corpus
 
 
-@click.command("find-similar", help="Find duplicate or boundary-adjacent eval cases.")
-@click.option("--candidate", "candidate_path", required=True, type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.command("find-similar-batch", help="Find duplicate or boundary-adjacent eval cases for a scoped batch of candidates.")
+@click.option("--candidates", "candidates_path", required=True, type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("--corpus", "corpus_path", required=True, type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("--output", "output_path", required=True, type=click.Path(dir_okay=False, path_type=Path))
 @click.option("--duplicate-threshold", default=0.88, show_default=True, type=float)
@@ -20,8 +19,8 @@ from parity.tools.similarity import classify_embedding_against_corpus
 @click.option("--model", default="text-embedding-3-small", show_default=True)
 @click.option("--cache", "cache_path", default=".parity/embedding_cache.db", show_default=True, type=click.Path(path_type=Path))
 @click.option("--dimensions", type=int, default=None)
-def find_similar_command(
-    candidate_path: Path,
+def find_similar_batch_command(
+    candidates_path: Path,
     corpus_path: Path,
     output_path: Path,
     duplicate_threshold: float,
@@ -30,11 +29,11 @@ def find_similar_command(
     cache_path: Path,
     dimensions: int | None,
 ) -> None:
-    candidate = json.loads(candidate_path.read_text(encoding="utf-8"))
+    candidates = json.loads(candidates_path.read_text(encoding="utf-8"))
     corpus = json.loads(corpus_path.read_text(encoding="utf-8"))
     try:
-        embedded_candidate, _ = embed_batch(
-            [candidate],
+        embedded_candidates, _ = embed_batch(
+            candidates,
             model=model,
             cache_path=cache_path,
             dimensions=dimensions,
@@ -43,16 +42,19 @@ def find_similar_command(
         click.echo(str(exc), err=True)
         raise SystemExit(1) from exc
 
-    payload = classify_embedding_against_corpus(
-        embedded_candidate[0]["embedding"],
+    results = classify_embeddings_against_corpus(
+        embedded_candidates,
         corpus,
-        candidate_id=candidate["id"],
         duplicate_threshold=duplicate_threshold,
         boundary_threshold=boundary_threshold,
     )
+    payload = {
+        "candidate_count": len(results),
+        "results": results,
+    }
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 if __name__ == "__main__":
-    find_similar_command()
+    find_similar_batch_command()

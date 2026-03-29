@@ -17,7 +17,25 @@ def test_stage2_prompt_includes_bootstrap_instructions() -> None:
                     "inferred_intent": "Require citations for factual answers",
                 }
             ],
-        }
+        },
+        mapping_resolutions=[
+            {
+                "artifact_path": "prompts/answer.md",
+                "mapping_status": "explicit",
+                "platform": "langsmith",
+                "target": "answer-regression",
+            }
+        ],
+        bootstrap_brief={
+            "overall_risk": "high",
+            "compound_change_detected": False,
+            "changes": [
+                {
+                    "artifact_path": "prompts/answer.md",
+                    "risk_flags": ["Casual questions may receive citations unexpectedly"],
+                }
+            ],
+        },
     )
 
     assert "switch to bootstrap mode" in prompt
@@ -25,6 +43,15 @@ def test_stage2_prompt_includes_bootstrap_instructions() -> None:
     assert "remain in coverage-aware mode" in prompt
     assert "`coverage_summary.retrieval_notes`" in prompt
     assert "Never populate it when mode is `coverage_aware`" in prompt
+    assert "RESOLVED DATASET MAPPINGS" in prompt
+    assert "BOOTSTRAP BRIEF" in prompt
+    assert "Do not inspect `parity.yaml`" in prompt
+    assert "preferred starting point, not as infallible ground truth" in prompt
+    assert "limited platform-side discovery" in prompt
+    assert "Record that recovery in" in prompt
+    assert "`parity find-similar-batch`" in prompt
+    assert "do not flatten unrelated artifacts or unrelated datasets into one batch" in prompt
+    assert '"target": "answer-regression"' in prompt
 
 
 def test_stage3_prompt_describes_bootstrap_mode() -> None:

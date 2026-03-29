@@ -4,12 +4,19 @@ import asyncio
 import copy
 import json
 import sys
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, TypeVar
 
-from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ResultMessage, query
+from claude_agent_sdk import (
+    AssistantMessage,
+    ClaudeAgentOptions,
+    ResultMessage,
+    TaskProgressMessage,
+    query,
+)
 
 from parity.errors import BudgetExceededError, RateLimitStageError, SchemaValidationError, StageError
 
@@ -87,6 +94,33 @@ def message_text(message: AssistantMessage) -> str:
     return "".join(chunks)
 
 
+def message_tool_names(message: AssistantMessage) -> list[str]:
+    names: list[str] = []
+    for block in message.content:
+        name = getattr(block, "name", None)
+        if isinstance(name, str):
+            names.append(name)
+    return names
+
+
+def format_tool_summary(
+    tool_counts: dict[str, int],
+    tool_durations_ms: dict[str, int],
+) -> str:
+    if not tool_counts:
+        return "none"
+
+    parts: list[str] = []
+    for tool_name in sorted(tool_counts):
+        count = tool_counts[tool_name]
+        duration_ms = tool_durations_ms.get(tool_name, 0)
+        if duration_ms > 0:
+            parts.append(f"{tool_name} x{count} (~{duration_ms}ms)")
+        else:
+            parts.append(f"{tool_name} x{count}")
+    return ", ".join(parts)
+
+
 def attempt_partial_extraction(raw_result: str | None) -> Any | None:
     if not raw_result:
         return None
@@ -115,7 +149,12 @@ async def _run_query(
     last_model: str | None = None
     last_assistant_error: str | None = None
     result_message: ResultMessage | None = None
-    turn_count = 0
+    assistant_message_count = 0
+    observed_tool_counts: dict[str, int] = defaultdict(int)
+    observed_tool_durations_ms: dict[str, int] = defaultdict(int)
+    previous_tool_uses = 0
+    previous_progress_duration_ms = 0
+    previous_progress_tool_name: str | None = None
 
     print(
         f"[stage-{stage_num}] Agent starting — max_turns={options.max_turns} budget=${options.max_budget_usd:.2f}",
@@ -125,16 +164,56 @@ async def _run_query(
 
     async for message in query(prompt=prompt, options=options):
         if isinstance(message, AssistantMessage):
-            turn_count += 1
+            assistant_message_count += 1
             last_model = message.model
             if message.error:
                 last_assistant_error = message.error
             else:
                 preview = message_text(message)[:120].replace("\n", " ").strip()
                 if preview:
-                    print(f"[stage-{stage_num}] turn {turn_count}: {preview}", file=sys.stderr, flush=True)
+                    print(
+                        f"[stage-{stage_num}] assistant_message {assistant_message_count}: {preview}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
                 else:
-                    print(f"[stage-{stage_num}] turn {turn_count}: (tool use / no text)", file=sys.stderr, flush=True)
+                    tool_names = message_tool_names(message)
+                    if tool_names:
+                        preview_names = ", ".join(tool_names[:3])
+                        suffix = "" if len(tool_names) <= 3 else ", ..."
+                        detail = f"tool_calls={preview_names}{suffix}"
+                    else:
+                        detail = "no_text"
+                    print(
+                        f"[stage-{stage_num}] assistant_message {assistant_message_count}: ({detail})",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+        elif isinstance(message, TaskProgressMessage):
+            total_tool_uses = max(message.usage.get("tool_uses", 0), 0)
+            total_duration_ms = max(message.usage.get("duration_ms", 0), 0)
+            last_tool_name = message.last_tool_name or "unknown"
+
+            duration_delta_ms = max(total_duration_ms - previous_progress_duration_ms, 0)
+            if duration_delta_ms:
+                observed_tool_durations_ms[last_tool_name] += duration_delta_ms
+
+            tool_use_delta = max(total_tool_uses - previous_tool_uses, 0)
+            if tool_use_delta:
+                observed_tool_counts[last_tool_name] += tool_use_delta
+
+            if tool_use_delta or last_tool_name != previous_progress_tool_name:
+                print(
+                    f"[stage-{stage_num}] progress: last_tool={last_tool_name} "
+                    f"cumulative_tool_uses={total_tool_uses} total_tokens={message.usage.get('total_tokens', 'n/a')} "
+                    f"duration={total_duration_ms}ms",
+                    file=sys.stderr,
+                    flush=True,
+                )
+
+            previous_tool_uses = total_tool_uses
+            previous_progress_duration_ms = total_duration_ms
+            previous_progress_tool_name = last_tool_name
         elif isinstance(message, ResultMessage):
             result_message = message
 
@@ -217,6 +296,19 @@ async def _run_query(
             f"Raw response (first 300 chars): {truncated_result}"
         ) from exc
 
+    print(
+        f"[stage-{stage_num}] completion: sdk_turns={result_message.num_turns} "
+        f"assistant_messages={assistant_message_count} observed_tool_uses={sum(observed_tool_counts.values())}",
+        file=sys.stderr,
+        flush=True,
+    )
+    if observed_tool_counts:
+        print(
+            f"[stage-{stage_num}] tool_summary: {format_tool_summary(observed_tool_counts, observed_tool_durations_ms)}",
+            file=sys.stderr,
+            flush=True,
+        )
+
     return StageRunResult(
         data=parsed,
         model=last_model,
@@ -225,6 +317,18 @@ async def _run_query(
         num_turns=result_message.num_turns,
         timestamp=datetime.now(tz=timezone.utc).isoformat(),
         raw_result=result_message.result,
+        extras={
+            "assistant_messages": assistant_message_count,
+            "observed_tool_uses": sum(observed_tool_counts.values()),
+            "tools_observed": [
+                {
+                    "name": tool_name,
+                    "count": observed_tool_counts[tool_name],
+                    "approx_duration_ms": observed_tool_durations_ms.get(tool_name, 0),
+                }
+                for tool_name in sorted(observed_tool_counts)
+            ],
+        },
     )
 
 
