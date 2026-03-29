@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import uuid
 from typing import Any
 
@@ -8,9 +9,9 @@ from langsmith import Client
 from parity.models import EvalCase, ProbeCase, normalize_input
 from parity.models.eval_case import ConversationMessage, flatten_expected_output
 
-# Stable namespace for deterministic UUID generation from probe IDs.
-# This ensures the same probe_id always maps to the same UUID across runs,
-# enabling deduplication and idempotency.
+# Stable namespace for deterministic UUID generation from probe content.
+# This keeps retries idempotent while avoiding collisions from reused probe IDs
+# like "probe_001" across different proposals.
 LANGSMITH_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "parity-langsmith-probes")
 
 
@@ -24,6 +25,37 @@ def _as_mapping(value: Any) -> dict[str, Any]:
     if hasattr(value, "dict"):
         return value.dict()
     return {}
+
+
+def _serialize_langsmith_input(value: Any) -> Any:
+    if isinstance(value, list):
+        return [item.model_dump() if isinstance(item, ConversationMessage) else item for item in value]
+    return value
+
+
+def _langsmith_probe_inputs(probe: ProbeCase) -> dict[str, Any]:
+    if probe.input_format == "conversation":
+        return {"messages": _serialize_langsmith_input(probe.input)}
+    if probe.input_format == "string":
+        return {"query": probe.input}
+    return _serialize_langsmith_input(probe.input)
+
+
+def _langsmith_example_id(*, dataset_id: str, probe: ProbeCase) -> uuid.UUID:
+    identity_payload = {
+        "dataset_id": dataset_id,
+        "inputs": _langsmith_probe_inputs(probe),
+        "expected_behavior": probe.expected_behavior,
+        "expected_behavior_type": probe.expected_behavior_type,
+        "rubric": probe.rubric,
+    }
+    canonical_identity = json.dumps(
+        identity_payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    )
+    return uuid.uuid5(LANGSMITH_NAMESPACE, canonical_identity)
 
 
 class LangSmithReader:
@@ -80,18 +112,13 @@ class LangSmithWriter:
         source_pr: int | None = None,
         source_commit: str | None = None,
     ) -> Any:
-        def serialize_input(value: Any) -> Any:
-            if isinstance(value, list):
-                return [item.model_dump() if isinstance(item, ConversationMessage) else item for item in value]
-            return value
+        dataset = self.client.read_dataset(dataset_name=dataset_name, dataset_id=dataset_id)
+        resolved_dataset_id = str(dataset.id)
 
         examples = [
             {
-                "inputs": (
-                    {"messages": serialize_input(probe.input)}
-                    if probe.input_format == "conversation"
-                    else {"query": probe.input} if probe.input_format == "string" else serialize_input(probe.input)
-                ),
+                "id": _langsmith_example_id(dataset_id=resolved_dataset_id, probe=probe),
+                "inputs": _langsmith_probe_inputs(probe),
                 "outputs": {"expected_behavior": probe.expected_behavior},
                 "metadata": {
                     "probe_type": probe.probe_type,
@@ -106,13 +133,7 @@ class LangSmithWriter:
             }
             for probe in probes
         ]
-        # Generate deterministic UUIDs from probe IDs using a stable namespace.
-        # This ensures the same probe_id always maps to the same UUID, enabling
-        # deduplication and idempotency across multiple write operations.
-        ids = [uuid.uuid5(LANGSMITH_NAMESPACE, probe.probe_id) for probe in probes]
         return self.client.create_examples(
-            dataset_name=dataset_name,
-            dataset_id=dataset_id,
+            dataset_id=resolved_dataset_id,
             examples=examples,
-            ids=ids,
         )
