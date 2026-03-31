@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from parity.config import ParityConfig
+from parity.config import ParityConfig, ResolvedSpendCaps
 from parity.context import count_tokens
 from parity.errors import BudgetExceededError
 from parity.models import (
@@ -159,6 +159,84 @@ def _build_bootstrap_target(change: dict[str, Any], reason: str) -> ResolvedEval
     )
 
 
+def _build_recovered_target_from_snapshot(snapshot_payload: dict[str, Any], reason: str) -> ResolvedEvalTarget | None:
+    if not isinstance(snapshot_payload, dict):
+        return None
+
+    target_id = snapshot_payload.get("target_id")
+    platform = snapshot_payload.get("platform")
+    target_name = snapshot_payload.get("target_name")
+    locator = snapshot_payload.get("target_locator") or snapshot_payload.get("target")
+    method_profile = snapshot_payload.get("method_profile")
+    if not all(isinstance(value, str) and value for value in (target_id, platform, target_name, locator)):
+        return None
+    if not isinstance(method_profile, dict):
+        return None
+
+    resolution_source = "repo_asset_discovery" if platform == "promptfoo" else "platform_discovery"
+    access_mode = "file" if platform == "promptfoo" else "mcp"
+    try:
+        target = ResolvedEvalTarget.model_validate(
+            {
+                "profile": {
+                    "target_id": target_id,
+                    "platform": platform,
+                    "locator": locator,
+                    "target_name": target_name,
+                    "dataset_id": snapshot_payload.get("dataset_id"),
+                    "project": snapshot_payload.get("project"),
+                    "artifact_paths": snapshot_payload.get("artifact_paths", []),
+                    "resolution_source": resolution_source,
+                    "access_mode": access_mode,
+                    "write_capability": method_profile.get("renderability_status", "unsupported"),
+                    "profile_confidence": snapshot_payload.get(
+                        "profile_confidence",
+                        method_profile.get("confidence", 0.0),
+                    ),
+                },
+                "method_profile": method_profile,
+                "samples": snapshot_payload.get("samples", []),
+                "evaluator_dossiers": snapshot_payload.get("evaluator_dossiers", []),
+                "raw_field_patterns": snapshot_payload.get("raw_field_patterns", []),
+                "aggregate_method_hints": snapshot_payload.get("aggregate_method_hints", []),
+                "resolution_notes": [
+                    "Recovered from cached Stage 2 snapshot after degraded finalization.",
+                    reason,
+                ],
+            }
+        )
+    except Exception:
+        return None
+    return target
+
+
+def _coerce_cached_stage2_targets(
+    cached_target_snapshots: list[dict[str, Any]] | None,
+    *,
+    reason: str,
+) -> list[ResolvedEvalTarget]:
+    if not isinstance(cached_target_snapshots, list):
+        return []
+    valid: list[ResolvedEvalTarget] = []
+    seen: set[str] = set()
+    for snapshot_payload in cached_target_snapshots:
+        target = _build_recovered_target_from_snapshot(snapshot_payload, reason)
+        if target is None or target.profile.target_id in seen:
+            continue
+        seen.add(target.profile.target_id)
+        valid.append(target)
+    return valid
+
+
+def _artifact_target_lookup(resolved_targets: list[ResolvedEvalTarget]) -> dict[str, ResolvedEvalTarget]:
+    lookup: dict[str, ResolvedEvalTarget] = {}
+    for target in resolved_targets:
+        for artifact_path in target.profile.artifact_paths:
+            if isinstance(artifact_path, str) and artifact_path and artifact_path not in lookup:
+                lookup[artifact_path] = target
+    return lookup
+
+
 def _coerce_partial_stage2_targets(partial_payload: dict[str, Any] | None) -> list[ResolvedEvalTarget]:
     if not isinstance(partial_payload, dict):
         return []
@@ -233,14 +311,34 @@ def _infer_guardrail_direction(change: dict[str, Any], risk_flag: str) -> str | 
     return None
 
 
-def _build_stage2_fallback_gaps(stage1_manifest: dict, reason: str) -> list[CoverageGap]:
+def _build_stage2_fallback_gaps(
+    stage1_manifest: dict,
+    reason: str,
+    *,
+    resolved_targets: list[ResolvedEvalTarget] | None = None,
+) -> list[CoverageGap]:
     gaps: list[CoverageGap] = []
     overall_risk = stage1_manifest.get("overall_risk") or "medium"
+    artifact_lookup = _artifact_target_lookup(resolved_targets or [])
     for change_index, change in enumerate(stage1_manifest.get("changes", []), start=1):
         artifact_path = change.get("artifact_path")
         if not isinstance(artifact_path, str) or not artifact_path:
             continue
-        target_id = f"bootstrap::{artifact_path}"
+        resolved_target = artifact_lookup.get(artifact_path)
+        target_id = resolved_target.profile.target_id if resolved_target is not None else f"bootstrap::{artifact_path}"
+        method_kind = resolved_target.method_profile.method_kind if resolved_target is not None else "unknown"
+        description = (
+            "Existing target evidence was recovered, but full coverage analysis did not complete before the fallback."
+            if resolved_target is not None
+            else "Bootstrap this behavior as a new eval area because analysis did not complete."
+        )
+        existing_coverage_notes = (
+            "Recovered native target evidence is available, but the gap was not fully classified before the fallback."
+            if resolved_target is not None
+            else "No validated native corpus comparison was completed before the fallback."
+        )
+        recommended_eval_mode = resolved_target.method_profile.method_kind if resolved_target is not None else "unknown"
+        profile_status = "uncertain" if resolved_target is not None else "bootstrap"
         risk_flags = _dedupe_non_empty(
             [
                 *change.get("unintended_risk_flags", []),
@@ -257,19 +355,19 @@ def _build_stage2_fallback_gaps(stage1_manifest: dict, reason: str) -> list[Cove
                     gap_id=f"{target_id}::gap::{change_index:03d}:{risk_index:02d}",
                     artifact_path=artifact_path,
                     target_id=target_id,
-                    method_kind="unknown",
+                    method_kind=method_kind,
                     gap_type="uncovered",
                     related_risk_flag=risk_flag,
-                    description="Bootstrap this behavior as a new eval area because analysis did not complete.",
+                    description=description,
                     why_gap_is_real=reason,
-                    existing_coverage_notes="No validated native corpus comparison was completed before the fallback.",
+                    existing_coverage_notes=existing_coverage_notes,
                     recommended_eval_area=change.get("artifact_class") or "behavior_regression",
-                    recommended_eval_mode="unknown",
+                    recommended_eval_mode=recommended_eval_mode,
                     native_shape_hints=list(change.get("validation_focus", [])),
                     compatible_nearest_cases=[],
                     repo_asset_refs=[],
                     priority=overall_risk,
-                    profile_status="bootstrap",
+                    profile_status=profile_status,
                     guardrail_direction=_infer_guardrail_direction(change, risk_flag),
                     is_conversational=False,
                     confidence=0.0,
@@ -284,8 +382,14 @@ def _build_stage2_fallback_coverage(
     reason: str,
 ) -> list[CoverageTargetSummary]:
     summaries: list[CoverageTargetSummary] = []
+    represented_artifacts: set[str] = set()
     for target in resolved_targets:
         sample_count = len(target.samples)
+        represented_artifacts.update(
+            artifact_path
+            for artifact_path in target.profile.artifact_paths
+            if isinstance(artifact_path, str) and artifact_path
+        )
         summaries.append(
             CoverageTargetSummary(
                 target_id=target.profile.target_id,
@@ -301,11 +405,9 @@ def _build_stage2_fallback_coverage(
                 analysis_notes=[],
             )
         )
-    if summaries:
-        return summaries
     for change in stage1_manifest.get("changes", []):
         artifact_path = change.get("artifact_path")
-        if not isinstance(artifact_path, str):
+        if not isinstance(artifact_path, str) or artifact_path in represented_artifacts:
             continue
         summaries.append(
             CoverageTargetSummary(
@@ -322,6 +424,29 @@ def _build_stage2_fallback_coverage(
             )
         )
     return summaries
+
+
+def _build_stage2_degraded_reason(exc: BudgetExceededError) -> str:
+    subtype = ""
+    if isinstance(exc.details, dict):
+        raw_subtype = exc.details.get("subtype")
+        if isinstance(raw_subtype, str):
+            subtype = raw_subtype
+
+    if subtype == "error_max_turns":
+        return (
+            "Stage 2 max-turn limit was reached before full eval analysis completed. "
+            "Returning a degraded analysis manifest from recovered discovery evidence and bootstrap fallback where needed."
+        )
+    if exc.message == "Rate limit persisted after retries":
+        return (
+            "Stage 2 hit a persistent rate limit before full eval analysis completed. "
+            "Returning a degraded analysis manifest from recovered discovery evidence and bootstrap fallback where needed."
+        )
+    return (
+        "Stage 2 spend cap was exhausted before full eval analysis completed. "
+        "Returning a degraded analysis manifest from recovered discovery evidence and bootstrap fallback where needed."
+    )
 
 
 def _coerce_partial_stage2_manifest(
@@ -384,6 +509,7 @@ def _build_stage2_budget_fallback(
     runtime_metadata: dict[str, Any],
     reason: str,
     partial_payload: dict[str, Any] | None = None,
+    cached_target_snapshots: list[dict[str, Any]] | None = None,
 ) -> EvalAnalysisManifest:
     partial_manifest = _coerce_partial_stage2_manifest(
         partial_payload=partial_payload,
@@ -397,13 +523,37 @@ def _build_stage2_budget_fallback(
         return partial_manifest
 
     partial_targets = _coerce_partial_stage2_targets(partial_payload)
-    resolved_targets = partial_targets or [
-        _build_bootstrap_target(change, reason)
-        for change in stage1_manifest.get("changes", [])
-        if isinstance(change.get("artifact_path"), str)
+    cached_targets = _coerce_cached_stage2_targets(cached_target_snapshots, reason=reason)
+    resolved_targets = list(partial_targets)
+    seen_target_ids = {target.profile.target_id for target in resolved_targets}
+    for target in cached_targets:
+        if target.profile.target_id in seen_target_ids:
+            continue
+        seen_target_ids.add(target.profile.target_id)
+        resolved_targets.append(target)
+    if not resolved_targets:
+        resolved_targets = [
+            _build_bootstrap_target(change, reason)
+            for change in stage1_manifest.get("changes", [])
+            if isinstance(change.get("artifact_path"), str)
+        ]
+    resolved_target_ids = {target.profile.target_id for target in resolved_targets}
+    partial_gaps = [
+        gap
+        for gap in _coerce_partial_stage2_gaps(partial_payload)
+        if gap.target_id in resolved_target_ids
     ]
-    gaps = _coerce_partial_stage2_gaps(partial_payload) or _build_stage2_fallback_gaps(stage1_manifest, reason)
-    coverage_by_target = _coerce_partial_stage2_coverage(partial_payload) or _build_stage2_fallback_coverage(
+    gaps = partial_gaps or _build_stage2_fallback_gaps(
+        stage1_manifest,
+        reason,
+        resolved_targets=resolved_targets,
+    )
+    partial_coverage = [
+        summary
+        for summary in _coerce_partial_stage2_coverage(partial_payload)
+        if summary.target_id in resolved_target_ids
+    ]
+    coverage_by_target = partial_coverage or _build_stage2_fallback_coverage(
         stage1_manifest,
         resolved_targets,
         reason,
@@ -433,10 +583,11 @@ def run_stage2(
     config: ParityConfig,
     *,
     cwd: str | Path | None = None,
+    resolved_spend: ResolvedSpendCaps | None = None,
 ) -> StageRunResult:
     run_id = f"stage2-{int(time.time())}"
     timestamp = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    resolved_spend = config.resolve_spend_caps()
+    resolved_spend = resolved_spend or config.resolve_spend_caps()
     rule_resolutions = _build_stage2_rule_resolutions(stage1_manifest, config)
     bootstrap_brief = _build_stage2_bootstrap_brief(stage1_manifest)
     prompt = render_stage2_prompt(
@@ -498,11 +649,9 @@ def run_stage2(
             )
         )
     except BudgetExceededError as exc:
-        degraded_reason = (
-            "Stage 2 spend cap was exhausted before full eval analysis completed. "
-            "Returning a degraded analysis manifest from partial discovery and bootstrap gaps."
-        )
+        degraded_reason = _build_stage2_degraded_reason(exc)
         print(f"[stage-2] degraded_fallback: {degraded_reason}", file=sys.stderr, flush=True)
+        exc_details = exc.details if isinstance(exc.details, dict) else {}
         result = StageRunResult(
             data=_build_stage2_budget_fallback(
                 stage1_manifest=stage1_manifest,
@@ -511,13 +660,20 @@ def run_stage2(
                 runtime_metadata=stage2_runtime.toolbox.build_runtime_metadata(),
                 reason=degraded_reason,
                 partial_payload=exc.partial_result if isinstance(exc.partial_result, dict) else None,
+                cached_target_snapshots=stage2_runtime.toolbox.build_recovery_state().get("cached_target_snapshots"),
             ),
-            model=None,
+            model=exc_details.get("model") if isinstance(exc_details.get("model"), str) else None,
             cost_usd=exc.cost_usd,
-            duration_ms=0,
-            num_turns=0,
+            duration_ms=int(exc_details.get("duration_ms", 0) or 0),
+            num_turns=int(exc_details.get("num_turns", 0) or 0),
             timestamp=datetime.now(tz=timezone.utc).isoformat(),
             raw_result=None,
+            extras={
+                "assistant_messages": exc_details.get("assistant_messages", 0),
+                "observed_tool_uses": exc_details.get("observed_tool_uses", 0),
+                "tools_observed": exc_details.get("tools_observed", []),
+                "failure_subtype": exc_details.get("subtype"),
+            },
         )
 
     runtime_metadata = stage2_runtime.toolbox.build_runtime_metadata()

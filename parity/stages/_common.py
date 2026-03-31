@@ -121,6 +121,16 @@ def format_tool_summary(
     return ", ".join(parts)
 
 
+def merge_tool_counts(
+    progress_counts: dict[str, int],
+    assistant_counts: dict[str, int],
+) -> dict[str, int]:
+    merged: dict[str, int] = {}
+    for tool_name in set(progress_counts) | set(assistant_counts):
+        merged[tool_name] = max(progress_counts.get(tool_name, 0), assistant_counts.get(tool_name, 0))
+    return merged
+
+
 def attempt_partial_extraction(raw_result: str | None) -> Any | None:
     if not raw_result:
         return None
@@ -152,6 +162,7 @@ async def _run_query(
     assistant_message_count = 0
     observed_tool_counts: dict[str, int] = defaultdict(int)
     observed_tool_durations_ms: dict[str, int] = defaultdict(int)
+    assistant_tool_call_counts: dict[str, int] = defaultdict(int)
     previous_tool_uses = 0
     previous_progress_duration_ms = 0
     previous_progress_tool_name: str | None = None
@@ -169,6 +180,9 @@ async def _run_query(
             if message.error:
                 last_assistant_error = message.error
             else:
+                tool_names = message_tool_names(message)
+                for tool_name in tool_names:
+                    assistant_tool_call_counts[tool_name] += 1
                 preview = message_text(message)[:120].replace("\n", " ").strip()
                 if preview:
                     print(
@@ -177,7 +191,6 @@ async def _run_query(
                         flush=True,
                     )
                 else:
-                    tool_names = message_tool_names(message)
                     if tool_names:
                         preview_names = ", ".join(tool_names[:3])
                         suffix = "" if len(tool_names) <= 3 else ", ..."
@@ -232,6 +245,7 @@ async def _run_query(
         if result_message.structured_output is not None
         else result_message.result
     )
+    merged_tool_counts = merge_tool_counts(observed_tool_counts, assistant_tool_call_counts)
     if result_message.subtype == "error_max_budget_usd":
         partial = attempt_partial_extraction(result_message.result)
         raise BudgetExceededError(
@@ -241,15 +255,18 @@ async def _run_query(
             partial_result=partial,
             details={
                 "subtype": result_message.subtype,
+                "model": last_model,
+                "duration_ms": result_message.duration_ms,
+                "num_turns": result_message.num_turns,
                 "assistant_messages": assistant_message_count,
-                "observed_tool_uses": sum(observed_tool_counts.values()),
+                "observed_tool_uses": sum(merged_tool_counts.values()),
                 "tools_observed": [
                     {
                         "name": tool_name,
-                        "count": observed_tool_counts[tool_name],
+                        "count": merged_tool_counts[tool_name],
                         "approx_duration_ms": observed_tool_durations_ms.get(tool_name, 0),
                     }
-                    for tool_name in sorted(observed_tool_counts)
+                    for tool_name in sorted(merged_tool_counts)
                 ],
             },
         )
@@ -262,15 +279,18 @@ async def _run_query(
             partial_result=partial,
             details={
                 "subtype": result_message.subtype,
+                "model": last_model,
+                "duration_ms": result_message.duration_ms,
+                "num_turns": result_message.num_turns,
                 "assistant_messages": assistant_message_count,
-                "observed_tool_uses": sum(observed_tool_counts.values()),
+                "observed_tool_uses": sum(merged_tool_counts.values()),
                 "tools_observed": [
                     {
                         "name": tool_name,
-                        "count": observed_tool_counts[tool_name],
+                        "count": merged_tool_counts[tool_name],
                         "approx_duration_ms": observed_tool_durations_ms.get(tool_name, 0),
                     }
-                    for tool_name in sorted(observed_tool_counts)
+                    for tool_name in sorted(merged_tool_counts)
                 ],
             },
         )
@@ -324,13 +344,13 @@ async def _run_query(
 
     print(
         f"[stage-{stage_num}] completion: sdk_turns={result_message.num_turns} "
-        f"assistant_messages={assistant_message_count} observed_tool_uses={sum(observed_tool_counts.values())}",
+        f"assistant_messages={assistant_message_count} observed_tool_uses={sum(merged_tool_counts.values())}",
         file=sys.stderr,
         flush=True,
     )
-    if observed_tool_counts:
+    if merged_tool_counts:
         print(
-            f"[stage-{stage_num}] tool_summary: {format_tool_summary(observed_tool_counts, observed_tool_durations_ms)}",
+            f"[stage-{stage_num}] tool_summary: {format_tool_summary(merged_tool_counts, observed_tool_durations_ms)}",
             file=sys.stderr,
             flush=True,
         )
@@ -345,14 +365,14 @@ async def _run_query(
         raw_result=result_message.result,
         extras={
             "assistant_messages": assistant_message_count,
-            "observed_tool_uses": sum(observed_tool_counts.values()),
+            "observed_tool_uses": sum(merged_tool_counts.values()),
             "tools_observed": [
                 {
                     "name": tool_name,
-                    "count": observed_tool_counts[tool_name],
+                    "count": merged_tool_counts[tool_name],
                     "approx_duration_ms": observed_tool_durations_ms.get(tool_name, 0),
                 }
-                for tool_name in sorted(observed_tool_counts)
+                for tool_name in sorted(merged_tool_counts)
             ],
         },
     )

@@ -39,6 +39,7 @@ OPERATING CONSTRAINTS:
 - Preserve the native case shape you discover. Do not collapse samples into generic rows.
 - Discover evaluator regime as well as row shape: whether assertions are row-local, dataset-bound, experiment-bound, or repo-code mediated, and which existing evaluator/scorer bindings appear reusable on the resolved target.
 - Prefer formal evaluator discovery whenever the platform or repo harness exposes it. Use inference from rows or metadata only when formal recovery is unavailable or incomplete.
+- `fetch_eval_target_snapshot` already includes a preliminary evaluator discovery pass and evaluator dossier recovery for that target.
 - Output one combined Stage 2 analysis artifact that includes:
   - `profile`
   - `method_profile`
@@ -60,11 +61,11 @@ PROCESS:
 1. For each artifact, inspect its rule resolution and discovery order.
 2. Use `fetch_eval_target_snapshot` for explicit preferred targets first.
 3. If needed, use `discover_eval_targets` on the same platform for recovery.
-4. Use `discover_target_evaluators` before relying on row inference whenever evaluator reuse might matter.
+4. Use `discover_target_evaluators` only when you need deeper confirmation of evaluator reuse beyond the preliminary discovery already returned by `fetch_eval_target_snapshot`.
 5. Use `read_evaluator_binding` and `verify_evaluator_binding` to inspect and confirm formal bindings when the platform supports it.
 6. Use `list_platform_evaluator_capabilities` to understand which formal discovery and verification surfaces exist for the target platform.
 7. If repo-local eval assets or scorer/judge code are plausible, use `discover_repo_eval_assets` and `read_repo_eval_asset`.
-8. Compare the changed behavior against the discovered corpus. Use embeddings and similarity tools when they help validate novelty, but do not rely on similarity alone when native assertions, evaluator regime, or harness structure provide stronger evidence.
+8. Resolve the target and evaluator regime before comparing the changed behavior against the discovered corpus. Use embeddings and similarity tools only when they materially improve novelty, nearest-case, or boundary-shift validation, and skip them when native assertions, evaluator regime, or harness structure already make the gap clear.
 9. Prefer targets whose discovered method profile, evaluator regime, row shape, and conventions align with the artifact and risk brief.
 10. For each artifact/risk slice, classify coverage as `covered`, `boundary_shift`, or `uncovered`.
 11. When real coverage is missing, emit a gap dossier that preserves enough target/method context for synthesis to produce native-feeling evals.

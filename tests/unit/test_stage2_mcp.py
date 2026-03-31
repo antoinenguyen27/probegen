@@ -57,6 +57,8 @@ def test_stage2_toolbox_fetches_promptfoo_snapshot_from_repo_relative_path(tmp_p
     assert payload["samples"][0]["case_id"] == "case_001"
     assert payload["method_profile"]["method_kind"] == "hybrid"
     assert payload["evaluator_dossiers"][0]["binding_id"] == "promptfoo::llm-rubric"
+    recovery_state = toolbox.build_recovery_state()
+    assert recovery_state["cached_target_snapshots"][0]["target_id"] == "promptfoo::evals/promptfooconfig.yaml"
 
 
 def test_stage2_toolbox_rejects_promptfoo_paths_outside_repo(tmp_path: Path) -> None:

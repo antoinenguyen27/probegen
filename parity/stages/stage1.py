@@ -6,7 +6,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from parity.config import ParityConfig
+from parity.config import ParityConfig, ResolvedSpendCaps
 from parity.context import count_tokens
 from parity.models import BehaviorChangeManifest
 from parity.prompts.stage1_template import render_stage1_prompt
@@ -22,10 +22,11 @@ def run_stage1(
     config: ParityConfig,
     *,
     cwd: str | Path | None = None,
+    resolved_spend: ResolvedSpendCaps | None = None,
 ) -> StageRunResult:
     run_id = f"stage1-{int(time.time())}"
     timestamp = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    resolved_spend = config.resolve_spend_caps()
+    resolved_spend = resolved_spend or config.resolve_spend_caps()
     prompt = render_stage1_prompt(raw_change_data, context)
 
     artifact_count = len(raw_change_data.get("hint_matched_artifacts", []))

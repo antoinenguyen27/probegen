@@ -6,7 +6,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from parity.config import ParityConfig
+from parity.config import ParityConfig, ResolvedSpendCaps
 from parity.context import count_tokens
 from parity.models import EvalAnalysisManifest, EvalIntentCandidateBundle, EvalProposalManifest
 from parity.prompts.stage3_template import (
@@ -27,10 +27,11 @@ def run_stage3(
     config: ParityConfig,
     *,
     cwd: str | Path | None = None,
+    resolved_spend: ResolvedSpendCaps | None = None,
 ) -> StageRunResult:
     run_id = f"stage3-{int(time.time())}"
     timestamp = datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    resolved_spend = config.resolve_spend_caps()
+    resolved_spend = resolved_spend or config.resolve_spend_caps()
     candidate_intent_pool_limit = config.generation.resolve_candidate_intent_pool_limit()
     stage3_input_context_limit_tokens = compute_stage3_input_context_limit_tokens(candidate_intent_pool_limit)
     prompt = render_stage3_prompt(

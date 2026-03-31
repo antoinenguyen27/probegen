@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -120,6 +121,7 @@ class Stage2Toolbox:
         self.embedding_spend_cap_usd = embedding_spend_cap_usd
         self.embedding_spend = Stage2EmbeddingSpendLedger()
         self.retrieval = Stage2RetrievalLedger()
+        self._cached_target_snapshots: dict[str, dict[str, Any]] = {}
 
     def discover_eval_targets(
         self,
@@ -257,7 +259,7 @@ class Stage2Toolbox:
         for case in cases:
             case.source_target_id = resolved_target_id
             case.target_locator = locator
-        return {
+        payload = {
             "target_id": resolved_target_id,
             "platform": normalized_platform,
             "target": target,
@@ -275,6 +277,8 @@ class Stage2Toolbox:
             "raw_field_patterns": summarize_raw_field_patterns(cases),
             "profile_confidence": method_profile.confidence,
         }
+        self._cached_target_snapshots[resolved_target_id] = copy.deepcopy(payload)
+        return payload
 
     def discover_target_evaluators(
         self,
@@ -552,6 +556,14 @@ class Stage2Toolbox:
             "stage2_embedding_spend_cap_usd": self.embedding_spend_cap_usd,
             "retrieval": self.retrieval.model_dump(),
             "embedding": self.embedding_spend.model_dump(),
+        }
+
+    def build_recovery_state(self) -> dict[str, Any]:
+        return {
+            "cached_target_snapshots": [
+                copy.deepcopy(self._cached_target_snapshots[target_id])
+                for target_id in sorted(self._cached_target_snapshots)
+            ]
         }
 
     def _fetch_eval_cases(

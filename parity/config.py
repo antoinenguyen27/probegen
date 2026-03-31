@@ -238,6 +238,7 @@ class SpendConfig(ParityModel):
     stage2_agent_cap_usd: float | None = None
     stage2_embedding_cap_usd: float | None = None
     stage3_agent_cap_usd: float | None = None
+    budget_policy: Literal["auto", "static", "carryforward"] = "auto"
 
     @field_validator(
         "analysis_total_spend_cap_usd",
