@@ -183,6 +183,7 @@ def test_stage1_options_use_narrow_tool_set(tmp_path: Path) -> None:
     assert options.can_use_tool is None
     assert options.hooks is not None
     assert "PreToolUse" in options.hooks
+    assert options.hooks["PreToolUse"][0].matcher == "Read|Glob|Bash"
 
 
 def test_stage1_options_support_string_prompt_queries(tmp_path: Path) -> None:
@@ -208,7 +209,7 @@ def test_stage1_options_support_string_prompt_queries(tmp_path: Path) -> None:
 def test_stage_mcp_policy_allows_expected_stage2_prefix() -> None:
     result = evaluate_mcp_tool_request(
         tool_name="mcp__parity_stage2__fetch_eval_target_snapshot",
-        allowed_prefixes=("mcp__parity_stage2__",),
+        allowed_tool_names=("mcp__parity_stage2__fetch_eval_target_snapshot",),
     )
 
     assert result.behavior == "allow"
@@ -217,7 +218,7 @@ def test_stage_mcp_policy_allows_expected_stage2_prefix() -> None:
 def test_stage_mcp_policy_denies_other_mcp_prefixes() -> None:
     result = evaluate_mcp_tool_request(
         tool_name="mcp__parity_stage3__read_target_profile",
-        allowed_prefixes=("mcp__parity_stage2__",),
+        allowed_tool_names=("mcp__parity_stage2__fetch_eval_target_snapshot",),
     )
 
     assert result.behavior == "deny"
@@ -235,6 +236,9 @@ def test_stage2_options_allow_only_host_owned_mcp_tools(tmp_path: Path) -> None:
     assert options.tools == []
     assert options.hooks is not None
     assert "PreToolUse" in options.hooks
+    assert options.hooks["PreToolUse"][0].matcher is not None
+    assert "mcp__parity_stage2__fetch_eval_target_snapshot" in options.hooks["PreToolUse"][0].matcher
+    assert "StructuredOutput" not in options.hooks["PreToolUse"][0].matcher
     assert "parity_stage2" in options.mcp_servers
 
 
@@ -250,3 +254,5 @@ def test_stage3_options_disable_builtin_tools(tmp_path: Path) -> None:
     assert options.mcp_servers == {}
     assert options.hooks is not None
     assert "PreToolUse" in options.hooks
+    assert options.hooks["PreToolUse"][0].matcher is not None
+    assert "mcp__parity_stage3__list_targets" in options.hooks["PreToolUse"][0].matcher

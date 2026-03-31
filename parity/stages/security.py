@@ -35,14 +35,41 @@ _ALLOWED_STAGE1_BASH_PATTERNS = (
     re.compile(r"^git diff --unified=\d+ origin/[^\s]+\.{3}HEAD -- [^\n\r]+$"),
     re.compile(r"^git ls-files(?: [^\n\r]+)?$"),
 )
-_STAGE2_MCP_TOOL_PREFIXES = ("mcp__parity_stage2__",)
-_STAGE3_MCP_TOOL_PREFIXES = ("mcp__parity_stage3__",)
+_STAGE1_TOOL_NAMES = ("Read", "Glob", "Bash")
+_STAGE2_MCP_TOOL_NAMES = (
+    "mcp__parity_stage2__discover_eval_targets",
+    "mcp__parity_stage2__fetch_eval_target_snapshot",
+    "mcp__parity_stage2__discover_target_evaluators",
+    "mcp__parity_stage2__read_evaluator_binding",
+    "mcp__parity_stage2__verify_evaluator_binding",
+    "mcp__parity_stage2__discover_repo_eval_assets",
+    "mcp__parity_stage2__read_repo_eval_asset",
+    "mcp__parity_stage2__list_platform_evaluator_capabilities",
+    "mcp__parity_stage2__embed_batch",
+    "mcp__parity_stage2__find_similar",
+    "mcp__parity_stage2__find_similar_batch",
+)
+_STAGE3_MCP_TOOL_NAMES = (
+    "mcp__parity_stage3__list_gap_dossiers",
+    "mcp__parity_stage3__read_gap_dossier",
+    "mcp__parity_stage3__list_targets",
+    "mcp__parity_stage3__read_target_profile",
+    "mcp__parity_stage3__list_evaluator_dossiers",
+    "mcp__parity_stage3__read_evaluator_dossier",
+    "mcp__parity_stage3__read_target_samples",
+    "mcp__parity_stage3__read_case_snapshot",
+    "mcp__parity_stage3__read_repo_eval_asset_excerpt",
+)
 
 
 @dataclass(frozen=True, slots=True)
 class Stage1ToolDecision:
     behavior: Literal["allow", "deny"]
     message: str | None = None
+
+
+def _build_tool_matcher(tool_names: tuple[str, ...]) -> str:
+    return "|".join(tool_names)
 
 
 def build_stage1_options(
@@ -54,9 +81,14 @@ def build_stage1_options(
 ) -> ClaudeAgentOptions:
     repo_root = Path(cwd).resolve()
     return ClaudeAgentOptions(
-        tools=["Read", "Glob", "Bash"],
+        tools=list(_STAGE1_TOOL_NAMES),
         hooks={
-            "PreToolUse": [HookMatcher(matcher=None, hooks=[build_stage1_pre_tool_use_hook(repo_root)])]
+            "PreToolUse": [
+                HookMatcher(
+                    matcher=_build_tool_matcher(_STAGE1_TOOL_NAMES),
+                    hooks=[build_stage1_pre_tool_use_hook(repo_root)],
+                )
+            ]
         },
         mcp_servers={},
         max_turns=max_turns,
@@ -106,7 +138,7 @@ def build_stage2_options(
         max_budget_usd=max_budget_usd,
         output_schema=output_schema,
         mcp_servers=mcp_servers,
-        allowed_prefixes=_STAGE2_MCP_TOOL_PREFIXES,
+        allowed_tool_names=_STAGE2_MCP_TOOL_NAMES,
     )
 
 
@@ -124,11 +156,11 @@ def build_stage3_options(
         max_budget_usd=max_budget_usd,
         output_schema=output_schema,
         mcp_servers=mcp_servers,
-        allowed_prefixes=_STAGE3_MCP_TOOL_PREFIXES,
+        allowed_tool_names=_STAGE3_MCP_TOOL_NAMES,
     )
 
 
-def build_mcp_pre_tool_use_hook(*, allowed_prefixes: tuple[str, ...]):
+def build_mcp_pre_tool_use_hook(*, allowed_tool_names: tuple[str, ...]):
     async def pre_tool_use(
         input_data: PreToolUseHookInput,
         _tool_use_id: str | None,
@@ -137,7 +169,7 @@ def build_mcp_pre_tool_use_hook(*, allowed_prefixes: tuple[str, ...]):
         tool_name = input_data.get("tool_name", "")
         decision = evaluate_mcp_tool_request(
             tool_name=tool_name,
-            allowed_prefixes=allowed_prefixes,
+            allowed_tool_names=allowed_tool_names,
         )
         return _pre_tool_use_response(decision)
 
@@ -151,12 +183,17 @@ def _build_mcp_stage_options(
     max_budget_usd: float,
     output_schema: dict[str, Any],
     mcp_servers: dict[str, Any] | None,
-    allowed_prefixes: tuple[str, ...],
+    allowed_tool_names: tuple[str, ...],
 ) -> ClaudeAgentOptions:
     return ClaudeAgentOptions(
         tools=[],
         hooks={
-            "PreToolUse": [HookMatcher(matcher=None, hooks=[build_mcp_pre_tool_use_hook(allowed_prefixes=allowed_prefixes)])]
+            "PreToolUse": [
+                HookMatcher(
+                    matcher=_build_tool_matcher(allowed_tool_names),
+                    hooks=[build_mcp_pre_tool_use_hook(allowed_tool_names=allowed_tool_names)],
+                )
+            ]
         },
         mcp_servers=mcp_servers or {},
         max_turns=max_turns,
@@ -233,17 +270,17 @@ def evaluate_stage1_tool_request(
 def evaluate_mcp_tool_request(
     *,
     tool_name: str,
-    allowed_prefixes: tuple[str, ...],
+    allowed_tool_names: tuple[str, ...],
 ) -> Stage1ToolDecision:
     normalized_tool_name = tool_name.strip()
-    if any(normalized_tool_name.startswith(prefix) for prefix in allowed_prefixes):
+    if normalized_tool_name in allowed_tool_names:
         return Stage1ToolDecision("allow")
 
     if normalized_tool_name.startswith("mcp__"):
-        allowed = ", ".join(f"`{prefix}*`" for prefix in allowed_prefixes)
+        allowed = ", ".join(f"`{name}`" for name in allowed_tool_names)
         return Stage1ToolDecision(
             "deny",
-            f"This stage only permits host-owned MCP tools matching {allowed}.",
+            f"This stage only permits host-owned MCP tools: {allowed}.",
         )
 
     return Stage1ToolDecision("deny", "This stage only permits host-owned MCP tools.")
