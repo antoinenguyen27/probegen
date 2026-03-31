@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 from types import SimpleNamespace
 
 import pytest
@@ -12,6 +13,10 @@ from parity.stages import _common
 
 class _OutputModel(BaseModel):
     ok: bool
+
+
+class _NormalizedDateModel(BaseModel):
+    last_verified_at: datetime | None = None
 
 
 class _FakeContentBlock:
@@ -129,3 +134,31 @@ def test_run_query_preserves_failure_metadata_on_turn_limit(monkeypatch: pytest.
     assert exc_info.value.details["duration_ms"] == 987
     assert exc_info.value.details["num_turns"] == 40
     assert exc_info.value.details["observed_tool_uses"] == 1
+
+
+def test_run_query_applies_normalize_payload_before_validation(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_query(*, prompt: str, options) -> object:
+        yield _FakeResultMessage(
+            structured_output={"last_verified_at": ""},
+            result='{"last_verified_at": ""}',
+        )
+
+    monkeypatch.setattr(_common, "AssistantMessage", _FakeAssistantMessage)
+    monkeypatch.setattr(_common, "TaskProgressMessage", _FakeTaskProgressMessage)
+    monkeypatch.setattr(_common, "ResultMessage", _FakeResultMessage)
+    monkeypatch.setattr(_common, "query", fake_query)
+
+    result = asyncio.run(
+        _common._run_query(
+            stage_num=2,
+            prompt="test",
+            options=SimpleNamespace(max_turns=10, max_budget_usd=1.0),
+            output_model=_NormalizedDateModel,
+            normalize_payload=lambda payload: {
+                **payload,
+                "last_verified_at": None if payload.get("last_verified_at") == "" else payload.get("last_verified_at"),
+            },
+        )
+    )
+
+    assert result.data.last_verified_at is None

@@ -96,6 +96,47 @@ def test_collapses_nullable_anyof_to_inner_type() -> None:
     assert result["properties"]["count"] == {"type": "integer"}
 
 
+def test_drops_nested_property_paths_after_simplification() -> None:
+    schema = {
+        "type": "object",
+        "properties": {
+            "resolved_targets": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "evaluator_dossiers": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "label": {"type": "string"},
+                                    "last_verified_at": {
+                                        "anyOf": [
+                                            {"type": "string", "format": "date-time"},
+                                            {"type": "null"},
+                                        ]
+                                    },
+                                },
+                                "required": ["label"],
+                            },
+                        }
+                    },
+                },
+            }
+        },
+    }
+
+    result = simplify_schema(
+        schema,
+        drop_property_paths=(("resolved_targets", "*", "evaluator_dossiers", "*", "last_verified_at"),),
+    )
+
+    dossier_props = result["properties"]["resolved_targets"]["items"]["properties"]["evaluator_dossiers"]["items"]["properties"]
+    assert "last_verified_at" not in dossier_props
+    assert dossier_props["label"] == {"type": "string"}
+
+
 def test_collapses_multi_type_anyof_to_unconstrained() -> None:
     """anyOf with multiple non-null variants collapses to {} (Agent SDK cannot express union types)."""
     schema = {

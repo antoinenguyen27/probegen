@@ -4,10 +4,12 @@ from parity.errors import BudgetExceededError
 from parity.config import ParityConfig
 from parity.stages._common import format_tool_summary
 from parity.stages.stage2 import (
+    _build_stage2_output_schema,
     _build_stage2_bootstrap_brief,
     _build_stage2_budget_fallback,
     _build_stage2_degraded_reason,
     _build_stage2_rule_resolutions,
+    _normalize_stage2_payload,
 )
 
 
@@ -291,3 +293,54 @@ def test_stage2_degraded_reason_distinguishes_budget_and_turns() -> None:
         )
         == "Stage 2 max-turn limit was reached before full eval analysis completed. Returning a degraded analysis manifest from recovered discovery evidence and bootstrap fallback where needed."
     )
+
+
+def test_stage2_output_schema_prunes_nonrepresentable_verification_timestamp() -> None:
+    schema = _build_stage2_output_schema()
+
+    dossier_props = schema["properties"]["resolved_targets"]["items"]["properties"]["evaluator_dossiers"]["items"]["properties"]
+    assert "last_verified_at" not in dossier_props
+
+
+def test_normalize_stage2_payload_coerces_blank_nullable_dossier_fields_to_none() -> None:
+    payload = _normalize_stage2_payload(
+        {
+            "resolved_targets": [
+                {
+                    "profile": {
+                        "target_id": "langsmith::demo",
+                        "platform": "langsmith",
+                        "locator": "demo",
+                        "target_name": "demo",
+                        "dataset_id": "",
+                        "project": "   ",
+                        "resolution_source": "platform_discovery",
+                        "access_mode": "mcp",
+                        "write_capability": "native_ready",
+                    },
+                    "evaluator_dossiers": [
+                        {
+                            "dossier_id": "langsmith::demo::evaluator::01",
+                            "target_id": "langsmith::demo",
+                            "label": "Helpful scorer",
+                            "binding_id": "",
+                            "binding_object_id": " ",
+                            "binding_location": "",
+                            "rationale": "  ",
+                            "last_verified_at": "",
+                        }
+                    ],
+                }
+            ]
+        }
+    )
+
+    profile = payload["resolved_targets"][0]["profile"]
+    dossier = payload["resolved_targets"][0]["evaluator_dossiers"][0]
+    assert profile["dataset_id"] is None
+    assert profile["project"] is None
+    assert dossier["binding_id"] is None
+    assert dossier["binding_object_id"] is None
+    assert dossier["binding_location"] is None
+    assert dossier["rationale"] is None
+    assert dossier["last_verified_at"] is None

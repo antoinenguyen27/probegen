@@ -25,6 +25,17 @@ from parity.stages.security import build_stage2_options
 from parity.stages.stage2_mcp import build_stage2_mcp_server
 
 _STAGE2_INJECT_KEYS = {"run_id", "stage1_run_id", "timestamp", "schema_version", "runtime_metadata"}
+_STAGE2_DROPPED_SCHEMA_PATHS = (
+    ("resolved_targets", "*", "evaluator_dossiers", "*", "last_verified_at"),
+)
+_STAGE2_NULLABLE_DOSSIER_FIELDS = (
+    "binding_id",
+    "binding_object_id",
+    "binding_location",
+    "rationale",
+    "last_verified_at",
+)
+_STAGE2_NULLABLE_PROFILE_FIELDS = ("dataset_id", "project")
 
 
 def _dedupe_non_empty(values: list[Any]) -> list[str]:
@@ -36,6 +47,64 @@ def _dedupe_non_empty(values: list[Any]) -> list[str]:
         if normalized and normalized not in deduped:
             deduped.append(normalized)
     return deduped
+
+
+def _normalize_blank_optional_value(value: Any) -> Any:
+    if isinstance(value, str) and not value.strip():
+        return None
+    return value
+
+
+def _normalize_stage2_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return payload
+
+    resolved_targets = payload.get("resolved_targets")
+    if not isinstance(resolved_targets, list):
+        return payload
+
+    normalized_targets: list[Any] = []
+    for raw_target in resolved_targets:
+        if not isinstance(raw_target, dict):
+            normalized_targets.append(raw_target)
+            continue
+
+        target = dict(raw_target)
+        profile = target.get("profile")
+        if isinstance(profile, dict):
+            normalized_profile = dict(profile)
+            for field_name in _STAGE2_NULLABLE_PROFILE_FIELDS:
+                if field_name in normalized_profile:
+                    normalized_profile[field_name] = _normalize_blank_optional_value(normalized_profile.get(field_name))
+            target["profile"] = normalized_profile
+
+        raw_dossiers = target.get("evaluator_dossiers")
+        if isinstance(raw_dossiers, list):
+            normalized_dossiers: list[Any] = []
+            for raw_dossier in raw_dossiers:
+                if not isinstance(raw_dossier, dict):
+                    normalized_dossiers.append(raw_dossier)
+                    continue
+                dossier = dict(raw_dossier)
+                for field_name in _STAGE2_NULLABLE_DOSSIER_FIELDS:
+                    if field_name in dossier:
+                        dossier[field_name] = _normalize_blank_optional_value(dossier.get(field_name))
+                normalized_dossiers.append(dossier)
+            target["evaluator_dossiers"] = normalized_dossiers
+
+        normalized_targets.append(target)
+
+    normalized_payload = dict(payload)
+    normalized_payload["resolved_targets"] = normalized_targets
+    return normalized_payload
+
+
+def _build_stage2_output_schema() -> dict[str, Any]:
+    return simplify_schema(
+        EvalAnalysisManifest.model_json_schema(),
+        remove_keys=_STAGE2_INJECT_KEYS,
+        drop_property_paths=_STAGE2_DROPPED_SCHEMA_PATHS,
+    )
 
 
 def _build_stage2_rule_resolutions(stage1_manifest: dict, config: ParityConfig) -> list[dict[str, Any]]:
@@ -607,10 +676,7 @@ def run_stage2(
         flush=True,
     )
 
-    output_schema = simplify_schema(
-        EvalAnalysisManifest.model_json_schema(),
-        remove_keys=_STAGE2_INJECT_KEYS,
-    )
+    output_schema = _build_stage2_output_schema()
 
     repo_root = Path(cwd or Path.cwd()).resolve()
     stage2_runtime = build_stage2_mcp_server(
@@ -646,6 +712,7 @@ def run_stage2(
                     "stage1_run_id": stage1_manifest.get("run_id", ""),
                     "timestamp": timestamp,
                 },
+                normalize_payload=_normalize_stage2_payload,
             )
         )
     except BudgetExceededError as exc:

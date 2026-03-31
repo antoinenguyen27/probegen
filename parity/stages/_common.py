@@ -25,12 +25,46 @@ ModelT = TypeVar("ModelT")
 _SUPPORTED_KEYS = {"type", "properties", "required", "items", "enum", "const", "$ref", "$defs"}
 
 
-def simplify_schema(schema: dict, *, remove_keys: set[str] | None = None) -> dict:
+def _drop_schema_property_path(schema: dict[str, Any], path: tuple[str, ...]) -> None:
+    if not path:
+        return
+
+    head, *tail = path
+    if head == "*":
+        items = schema.get("items")
+        if isinstance(items, dict):
+            _drop_schema_property_path(items, tuple(tail))
+        return
+
+    properties = schema.get("properties")
+    if not isinstance(properties, dict) or head not in properties:
+        return
+
+    if not tail:
+        properties.pop(head, None)
+        required = schema.get("required")
+        if isinstance(required, list):
+            schema["required"] = [name for name in required if name != head]
+        return
+
+    child = properties.get(head)
+    if isinstance(child, dict):
+        _drop_schema_property_path(child, tuple(tail))
+
+
+def simplify_schema(
+    schema: dict,
+    *,
+    remove_keys: set[str] | None = None,
+    drop_property_paths: tuple[tuple[str, ...], ...] | None = None,
+) -> dict:
     """Return a schema containing only Agent SDK CLI-supported keywords.
 
     Strips unsupported keywords (additionalProperties, title, default, format, anyOf),
     dereferences $defs/$ref, and removes inject_fields keys from properties/required
-    so the CLI does not expect the agent to produce orchestrator-owned values.
+    so the CLI does not expect the agent to produce orchestrator-owned values. Nested
+    property paths can also be dropped when the original field constraints cannot be
+    represented safely in the simplified schema.
     """
     schema = copy.deepcopy(schema)
     defs = schema.pop("$defs", {})
@@ -69,6 +103,10 @@ def simplify_schema(schema: dict, *, remove_keys: set[str] | None = None) -> dic
             simplified["properties"].pop(key, None)
         if "required" in simplified:
             simplified["required"] = [k for k in simplified["required"] if k not in remove_keys]
+
+    if drop_property_paths:
+        for path in drop_property_paths:
+            _drop_schema_property_path(simplified, path)
 
     return simplified
 
