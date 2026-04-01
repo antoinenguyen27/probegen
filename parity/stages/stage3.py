@@ -20,6 +20,23 @@ from parity.stages.stage3_mcp import build_stage3_mcp_server
 from parity.tools.similarity import apply_intent_diversity_limit, rank_probe_intents
 
 
+def _proposal_target_warnings(resolved_targets: list) -> list[str]:
+    warnings: list[str] = []
+    for target in resolved_targets:
+        if target.profile.platform == "braintrust" and not (target.profile.project or "").strip():
+            warnings.append(
+                f"Target `{target.profile.target_id}` is missing Braintrust project metadata, so proposed evals for it are review-only and will not be auto-written."
+            )
+    return warnings
+
+
+def _proposal_target_profile(resolved_target):
+    profile = resolved_target.profile
+    if profile.platform == "braintrust" and not (profile.project or "").strip() and profile.write_capability == "native_ready":
+        return profile.model_copy(update={"write_capability": "review_only"})
+    return profile
+
+
 def run_stage3(
     stage1_manifest: dict,
     stage2_manifest: dict,
@@ -102,7 +119,10 @@ def run_stage3(
     )
 
     resolved_targets = {target.profile.target_id: target for target in analysis.resolved_targets}
-    target_profiles = {target.profile.target_id: target.profile for target in analysis.resolved_targets}
+    target_profiles = {
+        target.profile.target_id: _proposal_target_profile(target)
+        for target in analysis.resolved_targets
+    }
     renderings = [
         build_native_rendering(
             intent,
@@ -125,6 +145,8 @@ def run_stage3(
     warnings = list(result.data.warnings)
     if context.warnings:
         warnings.extend(context.warnings)
+    warnings.extend(_proposal_target_warnings(analysis.resolved_targets))
+    warnings = list(dict.fromkeys(warnings))
 
     manifest = EvalProposalManifest(
         run_id=run_id,

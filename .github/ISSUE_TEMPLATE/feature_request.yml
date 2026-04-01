@@ -1,0 +1,30 @@
+name: Feature request
+description: Propose a user-facing improvement to Parity
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user or maintainer problem are you trying to solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Describe the behavior you want Parity to support.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Include workflow edits, docs changes, or manual workarounds you already tried.
+  - type: textarea
+    id: impact
+    attributes:
+      label: DX impact
+      description: Explain why this improves developer experience without adding unnecessary surface area.

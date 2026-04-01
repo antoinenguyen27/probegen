@@ -152,6 +152,8 @@ def write_evals_from_proposal(
                     source_commit=proposal.commit_sha,
                 )
             elif target.platform == "braintrust":
+                if not (target.project or "").strip():
+                    raise ValueError("Braintrust write target is missing required `project` metadata.")
                 BraintrustWriter(
                     api_key=os.environ.get("BRAINTRUST_API_KEY"),
                     org_name=config.platforms.braintrust.org if config.platforms.braintrust else None,
@@ -227,6 +229,8 @@ def write_evals_command(
     try:
         proposal = EvalProposalManifest.model_validate(json.loads(proposal_path.read_text(encoding="utf-8")))
         config = ParityConfig.load(config_path, allow_missing=True)
+        for warning in config.compatibility_warnings():
+            click.echo(f"parity: warning: {warning}", err=True)
         outcome = write_evals_from_proposal(
             proposal,
             config=config,

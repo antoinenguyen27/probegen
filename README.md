@@ -4,38 +4,44 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/downloads/)
 
-Parity discovers how your eval stack actually works, finds the coverage gaps introduced by an AI behavior change, and proposes native eval additions that fit the target suite instead of forcing everything through one generic probe row.
+Parity analyzes behavior-defining AI changes in pull requests, discovers the most relevant existing eval target, validates the real coverage gaps, and proposes native eval additions that fit the target suite.
 
-Parity is not an eval runner. It is a method-first eval synthesis system for LangSmith, Braintrust, Arize Phoenix, Promptfoo, and repo-local eval assets.
+Parity is not an eval runner. It does not create or mutate hosted evaluator infrastructure. It reuses the eval system you already have.
 
-## What Parity Optimizes For
+## What Parity Does
 
-For every PR that touches prompts, instructions, guardrails, judges, validators, or other behavior-defining assets, Parity:
+For each PR that changes prompts, instructions, guardrails, judges, validators, or similar behavior-defining assets, Parity:
 
 1. Detects the behavioral change.
-2. Discovers the most relevant existing eval target and how that target actually works.
-3. Validates which gaps are real against the discovered corpus, row shape, and evaluator regime.
-4. Synthesizes ranked native eval additions for that concrete target.
+2. Resolves the best matching eval target and method.
+3. Validates which gaps are actually uncovered.
+4. Synthesizes native eval additions for that target.
 5. Writes only `native_ready` evals after explicit approval.
 
-Parity reuses the target's existing active evaluator regime when the platform manages evaluators outside the row itself. It does not create, rebind, or mutate hosted evaluator infrastructure.
+## Support
 
-## Pipeline
+| Path | Status | Notes |
+|---|---|---|
+| Promptfoo | Strong | Best fully native path. Assertions are row-local and writeback is straightforward. |
+| LangSmith | Strong | Strong dataset discovery and writeback. Evaluator reuse is supported; evaluator mutation is out of scope. |
+| Braintrust | Supported with limitations | Writeback works. Target discovery is weaker and evaluator recovery depends more on repo assets. |
+| Arize Phoenix | Supported with limitations | Dataset read/write works. Evaluator discovery is weaker than Promptfoo and LangSmith. |
+| Bootstrap mode | Built in | If no safe target is found, Parity proposes starter evals and abstains from unsafe writeback. |
 
-- `Stage 1`: Behavior Change Analysis
-- `Stage 2`: Eval Analysis
-- `Stage 3`: Native Eval Synthesis
-- Deterministic writeback: `parity write-evals`
+More detail: [docs/platforms.md](docs/platforms.md)
 
-The main runtime artifacts are:
+## Public Commands
 
-- `BehaviorChangeManifest`
-- `EvalAnalysisManifest`
-- `EvalProposalManifest`
+These are the commands most users need:
 
-## Bootstrap Behavior
+- `parity init`
+- `parity doctor`
+- `parity run-stage 1`
+- `parity run-stage 2`
+- `parity run-stage 3`
+- `parity write-evals`
 
-If Parity cannot find a safe existing target, it falls back to bootstrap mode. Bootstrap means starter eval generation, not evaluator setup. These results remain proposal-oriented and are not auto-written unless they later become `native_ready`.
+Parity also ships lower-level operational commands for GitHub comments, run lookup, embeddings, and similarity, but those are advanced surfaces rather than the main product path.
 
 ## Quick Start
 
@@ -44,9 +50,21 @@ pip install parity-ai
 parity init
 ```
 
-`parity init` generates `parity.yaml`, a GitHub Actions workflow, and `context/` stubs. Fill in the context files, add your API keys as GitHub secrets, and open a PR that changes agent behavior.
+Then:
 
-See [docs/configuration.md](docs/configuration.md) for config details, [docs/spec.md](docs/spec.md) for the technical architecture, and [parity.yaml.example](parity.yaml.example) for the full schema.
+1. Fill in the generated `context/` files.
+2. Add GitHub secrets: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and any platform keys you use.
+3. Commit `parity.yaml`, `.github/workflows/parity.yml`, and `context/`.
+4. Open a PR that changes AI behavior.
+5. Add the fixed approval label `parity:approve` before merging if you want Parity to write approved evals back after merge.
+
+## Docs
+
+- [Configuration](docs/configuration.md)
+- [Architecture](docs/spec.md)
+- [Platform support](docs/platforms.md)
+- [Example quickstart](examples/langgraph-agentic-rag/docs/quickstart.md)
+- [Maintainer guide](docs/maintainers.md)
 
 ## License
 

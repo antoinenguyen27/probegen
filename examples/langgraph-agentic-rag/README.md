@@ -1,10 +1,10 @@
 # LangGraph Agentic RAG Example
 
-This example is a deliberately small repository that makes Parity's PR-to-probe workflow easy to test with a real LangGraph app.
+This example is a deliberately small repository that makes Parity's PR-to-eval workflow easy to test with a real LangGraph app.
 
-It implements the LangGraph agentic RAG reference pattern directly — retrieval from Lilian Weng's ML research blog posts, document grading, question rewriting, and answer generation — with all prompts defined as inline Python variables. The emphasis is on making behavioral changes easy to observe, easy to map to an eval dataset, and easy for Parity to turn into targeted probes.
+It implements the LangGraph agentic RAG reference pattern directly — retrieval from Lilian Weng's ML research blog posts, document grading, question rewriting, and answer generation — with all prompts defined as inline Python variables. The emphasis is on making behavioral changes easy to observe, easy to map to an eval dataset, and easy for Parity to turn into targeted native eval suggestions.
 
-This demo is deliberately coverage-aware: it seeds a small LangSmith dataset so Stage 2 has something real to compare against. Parity itself can also run without that baseline, in which case it falls back to bootstrap probe generation.
+This demo is deliberately coverage-aware: it seeds a small LangSmith dataset so Stage 2 has something real to compare against. Parity itself can also run without that baseline, in which case it falls back to bootstrap eval generation.
 
 ## What this demo is built to show
 
@@ -14,8 +14,8 @@ This demo is deliberately coverage-aware: it seeds a small LangSmith dataset so 
 4. The full Parity workflow:
    - detect the behavior change,
    - compare it to existing eval coverage,
-   - propose new probes in the PR,
-   - write approved probes back to LangSmith after merge.
+   - propose new evals in the PR,
+   - write approved evals back to LangSmith after merge.
 
 ## Repository layout
 

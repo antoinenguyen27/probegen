@@ -176,6 +176,63 @@ def test_build_native_rendering_preserves_scalar_braintrust_expected_shape() -> 
     assert rendering.payload["expected"] == "2015"
 
 
+def test_build_native_rendering_marks_braintrust_target_without_project_as_review_only() -> None:
+    target = ResolvedEvalTarget.model_validate(
+        {
+            "profile": {
+                "target_id": "braintrust::demo",
+                "platform": "braintrust",
+                "locator": "demo-dataset",
+                "target_name": "demo-dataset",
+                "project": None,
+                "resolution_source": "platform_discovery",
+                "access_mode": "sdk",
+                "write_capability": "native_ready",
+                "profile_confidence": 0.9,
+            },
+            "method_profile": {
+                "method_kind": "deterministic",
+                "input_shape": "string",
+                "assertion_style": "deterministic",
+                "uses_judge": False,
+                "supports_multi_assert": False,
+                "renderability_status": "native_ready",
+                "confidence": 0.9,
+            },
+            "samples": [],
+        }
+    )
+    intent = ProbeIntent.model_validate(
+        {
+            "intent_id": "intent-2",
+            "gap_id": "gap-2",
+            "target_id": "braintrust::demo",
+            "method_kind": "deterministic",
+            "intent_type": "regression_guard",
+            "title": "Scalar expected output",
+            "is_conversational": False,
+            "input": "What year was the Paris Agreement signed?",
+            "input_format": "string",
+            "behavior_under_test": "The assistant returns the correct year.",
+            "pass_criteria": "2015",
+            "failure_mode": "The assistant returns the wrong year.",
+            "probe_rationale": "Preserve scalar expected values for Braintrust rows.",
+            "related_risk_flag": "Wrong factual answer.",
+            "specificity_confidence": 0.9,
+            "testability_confidence": 0.9,
+            "novelty_confidence": 0.8,
+            "realism_confidence": 0.8,
+            "target_fit_confidence": 0.9,
+        }
+    )
+
+    rendering = build_native_rendering(intent, resolved_target=target, min_render_confidence=0.5)
+
+    assert rendering.rendering_kind == "review_note"
+    assert rendering.write_status == "review_only"
+    assert "missing `project`" in (rendering.abstention_reason or "")
+
+
 def test_infer_method_profile_exposes_row_local_evaluator_candidates_for_promptfoo() -> None:
     samples = [
         EvalCaseSnapshot.model_validate(

@@ -436,7 +436,13 @@ def build_native_rendering(
             abstention_reason="No safe native renderer exists for the discovered eval method.",
         )
 
-    if render_confidence < min_render_confidence or method_profile.renderability_status == "review_only":
+    review_only_reason = _review_only_reason_for_target(resolved_target)
+    if (
+        target.write_capability == "review_only"
+        or render_confidence < min_render_confidence
+        or method_profile.renderability_status == "review_only"
+        or review_only_reason is not None
+    ):
         payload = _review_only_payload(intent=intent, target=target, method_profile=method_profile)
         return NativeEvalRendering(
             rendering_id=f"render-{intent.intent_id}",
@@ -450,7 +456,7 @@ def build_native_rendering(
             target_locator=target.locator,
             payload=payload,
             summary="Manual review is required before writing this eval.",
-            abstention_reason="Render confidence or method support is insufficient for automatic writeback.",
+            abstention_reason=review_only_reason or "Render confidence or method support is insufficient for automatic writeback.",
         )
 
     if target.platform == "promptfoo":
@@ -1220,6 +1226,13 @@ def _review_only_payload(
         "failure_mode": intent.failure_mode,
         "input": _serialize_input(intent.input),
     }
+
+
+def _review_only_reason_for_target(resolved_target: ResolvedEvalTarget) -> str | None:
+    profile = resolved_target.profile
+    if profile.platform == "braintrust" and not (profile.project or "").strip():
+        return "Braintrust writeback requires a project-scoped dataset target, but the resolved target is missing `project`."
+    return None
 
 
 def _dominant_method_kind(assertion_kinds: list[str]) -> str:

@@ -79,6 +79,21 @@ class TestLangSmithWriter:
         assert first_example["outputs"] == {"answer": "The answer states 2015 and cites a source."}
         assert first_example["metadata"]["tags"] == ["expected_improvement", "parity"]
 
+    def test_create_examples_prefers_dataset_id_when_available(self) -> None:
+        mock_client = Mock()
+        writer = LangSmithWriter(client=mock_client)
+
+        writer.create_examples_from_renderings(
+            [_load_rendering()],
+            dataset_name="demo-dataset",
+            dataset_id="dataset-123",
+            source_pr=1,
+            source_commit="abc123",
+        )
+
+        mock_client.read_dataset.assert_not_called()
+        assert mock_client.create_examples.call_args.kwargs["dataset_id"] == "dataset-123"
+
 
 class TestLangSmithReader:
     def test_fetch_examples_prefers_structured_parity_assertions(self) -> None:
@@ -120,6 +135,16 @@ class TestLangSmithReader:
         assert len(cases[0].native_assertions) == 2
         assert cases[0].tags == ["citation"]
 
+    def test_fetch_examples_prefers_dataset_id_when_available(self) -> None:
+        mock_client = Mock()
+        mock_client.read_dataset.return_value = SimpleNamespace(id="dataset-123", name="demo-dataset")
+        mock_client.list_examples.return_value = []
+        reader = LangSmithReader(client=mock_client)
+
+        reader.fetch_examples(dataset_name="demo-dataset", dataset_id="dataset-123")
+
+        assert mock_client.read_dataset.call_args.kwargs == {"dataset_id": "dataset-123"}
+
     def test_discover_evaluator_bindings_uses_feedback_formulas_and_configs(self) -> None:
         mock_client = Mock()
         mock_client.read_dataset.return_value = SimpleNamespace(id="dataset-123", name="demo-dataset")
@@ -150,3 +175,15 @@ class TestLangSmithReader:
         assert bindings[0].verification_status == "verified"
         assert bindings[0].binding_id == "langsmith::dataset_formula::helpfulness"
         assert any(binding.binding_id == "langsmith::feedback_config::helpfulness" for binding in bindings)
+
+    def test_discover_evaluator_bindings_prefers_dataset_id_when_available(self) -> None:
+        mock_client = Mock()
+        mock_client.read_dataset.return_value = SimpleNamespace(id="dataset-123", name="demo-dataset")
+        mock_client.list_feedback_formulas.side_effect = [[], []]
+        mock_client.list_projects.return_value = []
+        mock_client.list_feedback_configs.return_value = []
+        reader = LangSmithReader(client=mock_client)
+
+        reader.discover_evaluator_bindings(dataset_name="demo-dataset", dataset_id="dataset-123")
+
+        assert mock_client.read_dataset.call_args.kwargs == {"dataset_id": "dataset-123"}

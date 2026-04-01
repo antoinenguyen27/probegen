@@ -8,12 +8,23 @@ import yaml
 from parity.models import EvalCaseSnapshot, EvaluatorBindingCandidate, NativeAssertion, NativeEvalRendering, normalize_input
 
 
+_PROMPTFOO_JUDGE_ASSERTION_TYPES = {
+    "llm-rubric",
+    "g-eval",
+    "answer-relevance",
+    "context-faithfulness",
+    "context-recall",
+    "factuality",
+}
+
+
 def _promptfoo_assertion_kind(assertion_type: str | None) -> str:
-    if assertion_type == "llm-rubric":
+    normalized = (assertion_type or "").strip().lower()
+    if not normalized:
+        return "unknown"
+    if normalized in _PROMPTFOO_JUDGE_ASSERTION_TYPES or normalized.startswith("model-graded"):
         return "judge"
-    if assertion_type in {"equals", "contains", "not-contains", "javascript"}:
-        return "deterministic"
-    return "unknown"
+    return "deterministic"
 
 
 def _serialize_rendering_input(value: Any) -> Any:
@@ -91,15 +102,16 @@ class PromptfooReader:
             assertions = test.get("assert", [])
             for assertion_index, assertion in enumerate(assertions):
                 assertion_type = assertion.get("type")
-                if assertion_type != "llm-rubric":
+                normalized_assertion_type = (assertion_type or "").strip().lower()
+                if _promptfoo_assertion_kind(assertion_type) != "judge":
                     continue
-                binding_id = "promptfoo::llm-rubric"
+                binding_id = f"promptfoo::{normalized_assertion_type}"
                 location = f"{path}:{index}:{assertion_index}"
                 existing = candidates.get(binding_id)
                 candidate = EvaluatorBindingCandidate.model_validate(
                     {
                         "binding_id": binding_id,
-                        "label": "Promptfoo llm-rubric assertion",
+                        "label": f"Promptfoo {normalized_assertion_type} assertion",
                         "scope": "row_local",
                         "execution_surface": "config_file",
                         "source": "promptfoo_config",

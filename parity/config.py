@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Literal, Self
 
 import yaml
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, PrivateAttr, field_validator, model_validator
 
 from parity.errors import ConfigError
 from parity.models._base import ParityModel
@@ -28,6 +28,7 @@ DEFAULT_STAGE1_AGENT_SPEND_RATIO = 0.30
 DEFAULT_STAGE2_AGENT_SPEND_RATIO = 0.18
 DEFAULT_STAGE2_EMBEDDING_SPEND_RATIO = 0.12
 DEFAULT_STAGE3_AGENT_SPEND_RATIO = 0.40
+FIXED_APPROVAL_LABEL = "parity:approve"
 
 DEFAULT_REPO_ASSET_GLOBS = [
     "promptfooconfig.yaml",
@@ -302,6 +303,7 @@ class ParityConfig(ParityModel):
     approval: ApprovalConfig = Field(default_factory=ApprovalConfig)
     auto_run: AutoRunConfig = Field(default_factory=AutoRunConfig)
     spend: SpendConfig = Field(default_factory=SpendConfig)
+    _deprecated_sections: tuple[str, ...] = PrivateAttr(default_factory=tuple)
 
     @classmethod
     def load(cls, path: str | Path = "parity.yaml", *, allow_missing: bool = False) -> Self:
@@ -317,9 +319,27 @@ class ParityConfig(ParityModel):
             raise ConfigError(f"Invalid YAML in {config_path}: {exc}") from exc
 
         try:
-            return cls.model_validate(payload)
+            config = cls.model_validate(payload)
         except Exception as exc:
             raise ConfigError(f"Invalid parity configuration: {exc}") from exc
+        config._deprecated_sections = tuple(
+            section
+            for section in ("approval", "auto_run")
+            if section in payload
+        )
+        return config
+
+    def compatibility_warnings(self) -> list[str]:
+        warnings: list[str] = []
+        if "approval" in self._deprecated_sections:
+            warnings.append(
+                f"`approval` is deprecated and ignored. Parity always uses the fixed GitHub label `{FIXED_APPROVAL_LABEL}`."
+            )
+        if "auto_run" in self._deprecated_sections:
+            warnings.append(
+                "`auto_run` is deprecated and ignored. Edit `.github/workflows/parity.yml` directly to change workflow policy."
+            )
+        return warnings
 
     def resolve_path(self, relative_path: str | Path, repo_root: str | Path | None = None) -> Path:
         path = Path(relative_path)

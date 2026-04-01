@@ -2,10 +2,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from parity.cli.init_cmd import render_workflow_template
+from parity.config import ParityConfig
 
-def test_example_workflow_uses_current_stage3_contract() -> None:
+
+def test_example_workflow_matches_rendered_template() -> None:
+    root = Path(__file__).resolve().parents[2]
+    config = ParityConfig.load(root / "examples" / "langgraph-agentic-rag" / "parity.yaml")
     workflow = (
-        Path(__file__).resolve().parents[2]
+        root
         / "examples"
         / "langgraph-agentic-rag"
         / ".github"
@@ -13,10 +18,4 @@ def test_example_workflow_uses_current_stage3_contract() -> None:
         / "parity.yml"
     ).read_text(encoding="utf-8")
 
-    assert "--analysis .parity/stage2.json" in workflow
-    assert "--gaps .parity/stage2.json" not in workflow
-    assert "intent_count" in workflow
-    assert "probe_count" not in workflow
-    assert "parity write-evals" in workflow
-    assert "parity write-probes" not in workflow
-    assert "--artifact-name parity-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}" in workflow
+    assert workflow == render_workflow_template(config)

@@ -10,16 +10,15 @@ import click
 import yaml
 
 from parity.config import (
-    ApprovalConfig,
     ArtifactDetectionConfig,
     ArizePhoenixPlatformConfig,
-    AutoRunConfig,
     BraintrustPlatformConfig,
     ContextConfig,
     EmbeddingConfig,
     EvalRuleConfig,
     EvalsConfig,
     GenerationConfig,
+    FIXED_APPROVAL_LABEL,
     ParityConfig,
     LangSmithPlatformConfig,
     PlatformsConfig,
@@ -205,17 +204,39 @@ jobs:
         with:
           python-version: "3.11"
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Install dependencies
         run: |
           pip install parity-ai
           npm install -g @anthropic-ai/claude-code
 
       - name: Stage 1 — Change Detection
+        id: stage1
         run: |
+          echo "::group::Stage 1 — Change Detection (agent running)"
           parity run-stage 1 \\
             --pr-number ${{ github.event.pull_request.number }} \\
             --base-branch ${{ github.event.pull_request.base.ref }} \\
             --output .parity/stage1.json
+          echo "::endgroup::"
+          if [ -f .parity/metadata.json ]; then
+            python3 - <<'PYEOF'
+          import json
+          try:
+              m = json.load(open(".parity/metadata.json"))
+              cost = f"${m['cost_usd']:.4f}" if m.get("cost_usd") is not None else "n/a"
+              print(
+                  f"::notice::Stage 1 — model={m.get('model','n/a')} "
+                  f"cost={cost} duration={m.get('duration_ms','n/a')}ms "
+                  f"turns={m.get('num_turns','n/a')} prompt_tokens={m.get('prompt_tokens','n/a')}"
+              )
+          except Exception as exc:
+              print(f"::warning::Could not read Stage 1 metadata: {exc}")
+          PYEOF
+          fi
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GITHUB_EVENT_PATH: ${{ github.event_path }}
@@ -223,33 +244,110 @@ jobs:
       - name: Check gate
         id: gate
         run: |
-          has_changes=$(python -c "
+          has_changes=$(python3 -c "
           import json
-          m = json.load(open('.parity/stage1.json'))
-          print('true' if m.get('has_changes') else 'false')
+          manifest = json.load(open('.parity/stage1.json'))
+          print('true' if manifest.get('has_changes') else 'false')
           ")
           echo "has_changes=$has_changes" >> $GITHUB_OUTPUT
+          if [ "$has_changes" = "true" ]; then
+            echo "::notice::Gate OPEN — behavioral artifact changes detected, proceeding to Stage 2 & 3"
+          else
+            echo "::notice::Gate CLOSED — no behavioral artifact changes, skipping Stage 2 & 3"
+          fi
 
       - name: Stage 2 — Eval Analysis
+        id: stage2
         if: steps.gate.outputs.has_changes == 'true'
         run: |
+          echo "::group::Stage 2 — Eval Analysis (agent running)"
           parity run-stage 2 \\
             --manifest .parity/stage1.json \\
             --output .parity/stage2.json
+          echo "::endgroup::"
+          if [ -f .parity/metadata.json ]; then
+            python3 - <<'PYEOF'
+          import json
+          try:
+              m = json.load(open(".parity/metadata.json"))
+              cost = f"${m['cost_usd']:.4f}" if m.get("cost_usd") is not None else "n/a"
+              print(
+                  f"::notice::Stage 2 — model={m.get('model','n/a')} "
+                  f"cost={cost} duration={m.get('duration_ms','n/a')}ms "
+                  f"turns={m.get('num_turns','n/a')} prompt_tokens={m.get('prompt_tokens','n/a')}"
+              )
+          except Exception as exc:
+              print(f"::warning::Could not read Stage 2 metadata: {exc}")
+          PYEOF
+          fi
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
-          BRAINTRUST_API_KEY: ${{ secrets.BRAINTRUST_API_KEY }}
-          PHOENIX_API_KEY: ${{ secrets.PHOENIX_API_KEY }}
+__ANALYSIS_PLATFORM_SECRET_ENVS__
 
       - name: Stage 3 — Native Eval Synthesis
+        id: stage3
         if: steps.gate.outputs.has_changes == 'true'
         run: |
+          echo "::group::Stage 3 — Native Eval Synthesis (agent running)"
           parity run-stage 3 \\
             --manifest .parity/stage1.json \\
             --analysis .parity/stage2.json \\
             --output .parity/stage3.json
+          echo "::endgroup::"
+          if [ -f .parity/metadata.json ]; then
+            python3 - <<'PYEOF'
+          import json
+          from pathlib import Path
+          try:
+              m = json.load(open(".parity/metadata.json"))
+              s3 = json.load(open(".parity/stage3.json")) if Path(".parity/stage3.json").exists() else {}
+              cost = f"${m['cost_usd']:.4f}" if m.get("cost_usd") is not None else "n/a"
+              intents = s3.get("intent_count", "n/a")
+              print(
+                  f"::notice::Stage 3 — model={m.get('model','n/a')} "
+                  f"cost={cost} duration={m.get('duration_ms','n/a')}ms "
+                  f"turns={m.get('num_turns','n/a')} intents_generated={intents}"
+              )
+          except Exception as exc:
+              print(f"::warning::Could not read Stage 3 metadata: {exc}")
+          PYEOF
+          fi
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - name: Job summary
+        if: always()
+        run: |
+          python3 - <<'PYEOF'
+          import json, os
+          from pathlib import Path
+
+          def load(path):
+              p = Path(path)
+              return json.loads(p.read_text()) if p.exists() else {}
+
+          s1 = load(".parity/stage1.json")
+          s3 = load(".parity/stage3.json")
+          pr = "${{ github.event.pull_request.number }}"
+          sha = "${{ github.event.pull_request.head.sha }}"[:7]
+          changes = len(s1.get("changes", []))
+          intents = s3.get("intent_count", 0) if s1.get("has_changes") else 0
+          lines = [
+              "## Parity Run Summary",
+              "",
+              "| Field | Value |",
+              "|-------|-------|",
+              f"| PR | #{pr} |",
+              f"| SHA | `{sha}` |",
+              f"| Behavioral changes detected | {changes} |",
+              f"| Proposed evals | {intents} |",
+          ]
+          summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary_path:
+              with open(summary_path, "a", encoding="utf-8") as handle:
+                  handle.write("\\n".join(lines) + "\\n")
+          PYEOF
 
       - name: Upload artifacts
         if: always()
@@ -302,7 +400,7 @@ jobs:
     if: |
       github.event_name == 'pull_request_target' &&
       github.event.pull_request.merged == true &&
-      contains(github.event.pull_request.labels.*.name, 'parity:approve')
+      contains(github.event.pull_request.labels.*.name, '__APPROVAL_LABEL__')
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -377,10 +475,23 @@ def _render_write_platform_secret_envs(config: ParityConfig) -> str:
     return "\n".join(lines) if lines else "          # No platform-specific writeback secrets required"
 
 
+def _render_analysis_platform_secret_envs(config: ParityConfig) -> str:
+    lines: list[str] = []
+    if config.platforms.langsmith:
+        lines.append("          LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}")
+    if config.platforms.braintrust:
+        lines.append("          BRAINTRUST_API_KEY: ${{ secrets.BRAINTRUST_API_KEY }}")
+    if config.platforms.arize_phoenix:
+        lines.append("          PHOENIX_API_KEY: ${{ secrets.PHOENIX_API_KEY }}")
+    return "\n".join(lines) if lines else "          # No platform-specific analysis secrets required"
+
+
 def render_workflow_template(config: ParityConfig) -> str:
-    return WORKFLOW_TEMPLATE.replace(
-        "__WRITE_PLATFORM_SECRET_ENVS__\n",
-        _render_write_platform_secret_envs(config) + "\n",
+    return (
+        WORKFLOW_TEMPLATE
+        .replace("__ANALYSIS_PLATFORM_SECRET_ENVS__\n", _render_analysis_platform_secret_envs(config) + "\n")
+        .replace("__WRITE_PLATFORM_SECRET_ENVS__\n", _render_write_platform_secret_envs(config) + "\n")
+        .replace("__APPROVAL_LABEL__", FIXED_APPROVAL_LABEL)
     )
 
 
@@ -567,8 +678,6 @@ def init_command(context_only: bool, dry_run: bool) -> None:
             embedding=EmbeddingConfig(),
             similarity=SimilarityConfig(),
             generation=GenerationConfig(),
-            approval=ApprovalConfig(),
-            auto_run=AutoRunConfig(),
             spend=SpendConfig(),
         )
 
@@ -595,7 +704,7 @@ def init_command(context_only: bool, dry_run: bool) -> None:
         click.echo("  1. Fill in context/ files with product details and known failure modes.")
         click.echo("  2. Add GitHub secrets: ANTHROPIC_API_KEY, OPENAI_API_KEY (+ eval platform keys).")
         click.echo("  3. Create the approval label in GitHub:")
-        click.echo('       gh label create "parity:approve" --color 0075ca --description "Approve Parity eval writeback"')
+        click.echo(f'       gh label create "{FIXED_APPROVAL_LABEL}" --color 0075ca --description "Approve Parity eval writeback"')
         click.echo("  4. Commit parity.yaml, .github/workflows/parity.yml, and context/.")
         click.echo("  5. Run `parity doctor` to verify your setup.")
     except click.Abort as exc:

@@ -45,3 +45,27 @@ jobs:
 
       - name: Run integration tests
         run: pytest -m integration -v
+
+  package:
+    name: Package smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Build sdist and wheel
+        run: python -m build
+
+      - name: Install built wheel in fresh venv
+        run: |
+          python -m venv /tmp/parity-package
+          /tmp/parity-package/bin/pip install dist/*.whl
+
+      - name: Smoke test installed CLI
+        run: /tmp/parity-package/bin/parity --help

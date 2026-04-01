@@ -7,7 +7,7 @@ from pathlib import Path
 
 import click
 
-from parity.config import ParityConfig
+from parity.config import FIXED_APPROVAL_LABEL, ParityConfig
 from parity.errors import ConfigError
 
 
@@ -50,6 +50,9 @@ def doctor_command(config_path: Path, ci: bool) -> None:
         checks.append((False, f"parity.yaml has errors: {exc}"))
 
     if config is not None:
+        for warning in config.compatibility_warnings():
+            checks.append((False, warning))
+
         # Check 3: ANTHROPIC_API_KEY
         anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
         checks.append((bool(anthropic_key), "ANTHROPIC_API_KEY is set"))
@@ -90,9 +93,16 @@ def doctor_command(config_path: Path, ci: bool) -> None:
             else:
                 checks.append((False, "No hint patterns configured in behavior_artifacts or guardrail_artifacts"))
 
-        # Check 7: context/ directory key files
+        # Check 7: workflow file
+        workflow_path = root / ".github" / "workflows" / "parity.yml"
+        checks.append((workflow_path.exists(), f"Workflow file {workflow_path.relative_to(root)} exists"))
+
+        # Check 8: context/ directory key files
         context_files = [
             config.context.product,
+            config.context.users,
+            config.context.interactions,
+            config.context.good_examples,
             config.context.bad_examples,
         ]
         for rel_path in context_files:
@@ -100,14 +110,13 @@ def doctor_command(config_path: Path, ci: bool) -> None:
             non_empty = full_path.exists() and full_path.stat().st_size > 0
             checks.append((non_empty, f"Context file {rel_path} exists and is non-empty"))
 
-        # Check 8: CI label check
+        # Check 9: CI label check
         if ci:
             token = os.environ.get("GITHUB_TOKEN", "")
             repo = os.environ.get("GITHUB_REPOSITORY", "")
-            label_name = config.approval.label
             if token and repo:
-                label_ok = _check_github_label(repo, token, label_name)
-                checks.append((label_ok, f"GitHub label '{label_name}' exists in {repo}"))
+                label_ok = _check_github_label(repo, token, FIXED_APPROVAL_LABEL)
+                checks.append((label_ok, f"GitHub label '{FIXED_APPROVAL_LABEL}' exists in {repo}"))
             else:
                 checks.append((False, "GITHUB_TOKEN or GITHUB_REPOSITORY not set — skipping label check"))
 

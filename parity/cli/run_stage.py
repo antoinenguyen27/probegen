@@ -232,6 +232,8 @@ def run_stage_command(
     except ConfigError as exc:
         click.echo(str(exc), err=True)
         raise SystemExit(5) from exc
+    for warning in config.compatibility_warnings():
+        click.echo(f"parity: warning: {warning}", err=True)
 
     try:
         ParityConfig.load(config_path, allow_missing=False)

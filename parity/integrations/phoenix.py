@@ -25,6 +25,14 @@ def _dataset_rows(dataset: Any) -> list[dict[str, Any]]:
     return []
 
 
+def _dataset_name(dataset: Any) -> str | None:
+    if isinstance(dataset, dict):
+        name = dataset.get("name")
+        return str(name) if name is not None else None
+    name = getattr(dataset, "name", None)
+    return str(name) if name is not None else None
+
+
 class PhoenixReader:
     def __init__(self, client: Client | None = None, *, base_url: str | None = None, api_key: str | None = None) -> None:
         self.client = client or Client(base_url=base_url, api_key=api_key)
@@ -109,7 +117,7 @@ class PhoenixWriter:
 
     def _find_dataset(self, dataset_name: str) -> Any | None:
         for dataset in self.client.datasets.list(limit=None):
-            if getattr(dataset, "name", None) == dataset_name:
+            if _dataset_name(dataset) == dataset_name:
                 return dataset
         return None
 

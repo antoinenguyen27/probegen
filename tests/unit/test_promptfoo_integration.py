@@ -75,3 +75,29 @@ def test_promptfoo_reader_reads_method_kind_and_multiple_assertions(tmp_path: Pa
     assert cases[0].method_kind == "hybrid"
     assert len(cases[0].native_assertions) == 2
     assert cases[0].normalized_projection.input_text == "What is 2+2?"
+
+
+def test_promptfoo_reader_treats_icontains_as_deterministic(tmp_path: Path) -> None:
+    path = tmp_path / "promptfooconfig.yaml"
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "tests": [
+                    {
+                        "id": "case_1",
+                        "vars": {"query": "What is 2+2?"},
+                        "assert": [
+                            {"type": "icontains", "value": "4"},
+                        ],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    reader = PromptfooReader()
+    cases = reader.fetch_examples(path)
+
+    assert len(cases) == 1
+    assert cases[0].method_kind == "deterministic"
+    assert cases[0].native_assertions[0].assertion_kind == "deterministic"

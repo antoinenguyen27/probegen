@@ -72,3 +72,86 @@ def test_write_evals_rejects_promptfoo_targets_outside_repo_root(tmp_path: Path)
     assert outcome.failures == [
         f"promptfoo:{proposal.targets[0].target_name}: Promptfoo write target must stay within the repository root: {outside_target}"
     ]
+
+
+def test_write_evals_rejects_braintrust_targets_without_project() -> None:
+    proposal = EvalProposalManifest.model_validate(
+        {
+            "run_id": "stage3",
+            "stage1_run_id": "stage1",
+            "stage2_run_id": "stage2",
+            "stage3_run_id": "stage3",
+            "timestamp": "2026-04-01T00:00:00Z",
+            "pr_number": 1,
+            "commit_sha": "abc123",
+            "intent_count": 1,
+            "targets": [
+                {
+                    "target_id": "braintrust::demo",
+                    "platform": "braintrust",
+                    "locator": "demo-dataset",
+                    "target_name": "demo-dataset",
+                    "dataset_id": None,
+                    "project": None,
+                    "artifact_paths": ["app/graph.py"],
+                    "resolution_source": "platform_discovery",
+                    "access_mode": "sdk",
+                    "write_capability": "native_ready",
+                    "profile_confidence": 0.9,
+                }
+            ],
+            "intents": [
+                {
+                    "intent_id": "intent_001",
+                    "gap_id": "gap_001",
+                    "target_id": "braintrust::demo",
+                    "method_kind": "deterministic",
+                    "intent_type": "regression_guard",
+                    "title": "Demo",
+                    "is_conversational": False,
+                    "input": "What year was the Paris Agreement signed?",
+                    "input_format": "string",
+                    "behavior_under_test": "The assistant returns the correct year.",
+                    "pass_criteria": "2015",
+                    "failure_mode": "Wrong year.",
+                    "probe_rationale": "Guard factual regressions.",
+                    "related_risk_flag": "Wrong factual answer.",
+                    "specificity_confidence": 0.9,
+                    "testability_confidence": 0.9,
+                    "novelty_confidence": 0.8,
+                    "realism_confidence": 0.8,
+                    "target_fit_confidence": 0.9,
+                }
+            ],
+            "evaluator_plans": [],
+            "renderings": [
+                {
+                    "rendering_id": "render-intent_001",
+                    "intent_id": "intent_001",
+                    "target_id": "braintrust::demo",
+                    "method_kind": "deterministic",
+                    "rendering_kind": "braintrust_record",
+                    "renderer_id": "braintrust/dataset-record",
+                    "write_status": "native_ready",
+                    "render_confidence": 0.95,
+                    "target_locator": "demo-dataset",
+                    "payload": {
+                        "input": "What year was the Paris Agreement signed?",
+                        "expected": "2015",
+                        "metadata": {},
+                        "tags": [],
+                    },
+                    "summary": "Braintrust-native dataset record ready for deterministic writeback.",
+                }
+            ],
+            "render_artifacts": [],
+            "warnings": [],
+        }
+    )
+
+    outcome = write_evals_from_proposal(proposal, config=ParityConfig())
+
+    assert outcome.exit_code == 2
+    assert outcome.failures == [
+        "braintrust:demo-dataset: Braintrust write target is missing required `project` metadata."
+    ]

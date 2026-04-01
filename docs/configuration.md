@@ -1,42 +1,70 @@
 # Configuration
 
+`parity.yaml` is intentionally narrow. It should control how Parity discovers behavior changes, where it is allowed to look for eval targets, how strict writeback should be, and how much analysis budget it can spend.
+
+If a setting does not reliably change product behavior, it should not be in this file.
+
 ## Prerequisites
 
 - Python 3.11+
-- Node.js 22+
+- Node.js 22+ in GitHub Actions
 - `ANTHROPIC_API_KEY`
-- `OPENAI_API_KEY` for embedding-backed coverage comparison
-- Platform keys only for the platforms you actually use
+- `OPENAI_API_KEY` for embedding-backed similarity checks
+- Platform API keys only for the platforms you use
 
-## Core Sections
+## Real Config Surface
 
-`parity.yaml` is now method-first.
+## `behavior_artifacts` and `guardrail_artifacts`
 
-- `behavior_artifacts` and `guardrail_artifacts` tell Stage 1 where behavioral changes are likely.
-- `platforms` defines the available integrations.
-- `evals.discovery` shapes where Parity is allowed to look for existing eval targets.
-- `evals.evaluators` controls how strictly Parity confirms the target's existing evaluator regime before reusing it.
-- `evals.rules` gives per-artifact preferences and constraints.
-- `evals.write` controls write safety.
-- `generation` controls how many candidate intents are generated and how many survive reranking.
-- `approval` defines the explicit approval label used before writeback.
-- `auto_run` controls whether the generated workflow should automatically write approved evals after merge.
+These are Stage 1 discovery hints.
+
+- `paths`
+- `python_patterns`
+- `exclude`
+
+They are hints, not hard filters. Stage 1 still sees the full PR file list and can inspect other files on demand.
+
+## `context`
+
+Controls where Parity reads product context:
+
+- `product`
+- `users`
+- `interactions`
+- `good_examples`
+- `bad_examples`
+- `traces_dir`
+- `trace_max_samples`
+
+Parity works without a complete context pack, but quality drops quickly.
+
+## `platforms`
+
+Declares the integrations available in this repo:
+
+- `langsmith`
+- `braintrust`
+- `arize_phoenix`
+- `promptfoo`
+
+Platform config only declares credentials and target defaults. It does not hardcode synthesis decisions.
 
 ## `evals.discovery`
 
-Use this to shape discovery, not to hardcode write routing.
+Controls where Stage 2 is allowed to look:
 
 - `repo_asset_globs`
 - `platform_discovery_order`
 - `sample_limit_per_target`
 - `allow_repo_asset_discovery`
 
-Discovery now covers repo-local scorer/judge code as well as file-configured eval assets when the glob set allows it.
+Use discovery settings to shape search, not to force a write target.
 
 ## `evals.rules`
 
-Each rule matches an artifact glob and provides preferences:
+Rules let you express strong hints for a changed artifact:
 
+- `artifact`
 - `preferred_platform`
 - `preferred_target`
 - `preferred_project`
@@ -44,37 +72,7 @@ Each rule matches an artifact glob and provides preferences:
 - `preferred_methods`
 - `repo_asset_hints`
 
-If discovery finds a better same-platform target that respects the rule, Parity can recover to it. If nothing safe is found, later stages bootstrap and abstain from auto-write.
-
-## `approval`
-
-`approval.label` defines the approval label Parity is intended to look for before deterministic writeback.
-
-This keeps the proposal path and the write path separate:
-
-- Stage 1 to Stage 3 can run on every relevant PR
-- `parity write-evals` only matters after explicit approval
-
-Current limitation:
-
-- the generated workflow still assumes the default `parity:approve` label
-- changing `approval.label` in `parity.yaml` does not yet fully rewrite the generated workflow behavior on its own
-
-## `auto_run`
-
-`auto_run` is the workflow-policy section for post-approval writeback behavior.
-
-- `enabled`
-- `fail_on`
-- `notify`
-
-This is workflow policy, not model behavior.
-
-Current limitation:
-
-- these fields are present in the public config model
-- the generated workflow still uses the default merged-PR approval/writeback flow
-- changing `auto_run` values does not yet fully specialize the generated workflow on its own
+Rules are hints and constraints. If a preferred target is stale or unrelated, Stage 2 can recover to a better target on the same platform.
 
 ## `evals.write`
 
@@ -85,84 +83,71 @@ These settings gate deterministic writeback:
 - `create_missing_targets`
 - `allow_review_only_exports`
 
-`review_only` renderings can still be exported as artifacts for inspection, but `parity write-evals` only writes `native_ready` renderings.
+`parity write-evals` only writes `native_ready` renderings.
 
 ## `evals.evaluators`
 
-These settings gate evaluator-regime confirmation:
+These settings control how strict Parity is when reusing an existing evaluator regime:
 
 - `formal_discovery_required`
 - `allow_inference_fallback`
 - `require_binding_verification`
 - `min_binding_confidence`
 
-Default behavior is conservative:
+Parity does not create, rebind, or mutate hosted evaluators.
 
-- prefer formal evaluator discovery when the platform or repo harness exposes it
-- fall back to inference when formal recovery is unavailable
-- reuse the target's existing active evaluator regime when confidently discoverable
-- keep bootstrap focused on starter eval generation, not evaluator infrastructure setup
+## `embedding` and `similarity`
 
-This section is about evaluator discovery confidence, not evaluator mutation. Parity does not create or rebind hosted evaluator infrastructure.
+These settings affect Stage 2 novelty and nearest-case comparison:
 
-## Generation Controls
+- `embedding.model`
+- `embedding.cache_path`
+- `embedding.dimensions`
+- `similarity.duplicate_threshold`
+- `similarity.boundary_threshold`
 
-- `generation.proposal_limit`
-- `generation.candidate_intent_pool_limit`
-- `generation.diversity_limit_per_gap`
+They affect evidence gathering, not writeback policy.
 
-Stage 3 generates a candidate pool of semantic intents. The host reranks by specificity, testability, novelty, realism, risk alignment, and target fit, then applies diversity control before producing the final proposal.
+## `generation`
 
-## Embedding and Similarity
+These settings bound Stage 3 output size:
 
-`embedding` and `similarity` affect Stage 2's corpus comparison behavior.
+- `proposal_limit`
+- `candidate_intent_pool_limit`
+- `diversity_limit_per_gap`
 
-- `embedding.model` selects the embedding model used for coverage comparison.
-- `embedding.cache_path` controls where cached vectors are stored.
-- `similarity.duplicate_threshold` and `similarity.boundary_threshold` shape how aggressively existing cases are treated as duplicates, boundary cases, or genuinely new gaps.
+Stage 3 generates a candidate pool first. The host reranks and caps the final proposal list.
 
-These settings influence evidence gathering and gap validation, not final writeback.
+## `spend`
 
-## Spend Caps
+Controls analysis budget:
 
-You can omit `spend:` entirely and use the default total analysis cap.
+- `analysis_total_spend_cap_usd`
+- `stage1_agent_cap_usd`
+- `stage2_agent_cap_usd`
+- `stage2_embedding_cap_usd`
+- `stage3_agent_cap_usd`
+- `budget_policy`
 
-The total is allocated across:
+Most users should set only `analysis_total_spend_cap_usd`.
 
-- Stage 1 agent spend
-- Stage 2 agent spend
-- Stage 2 embedding spend
-- Stage 3 synthesis budget
+## Workflow Contract
 
-Advanced users can override all four stage-specific caps together.
+The supported GitHub workflow contract is intentionally fixed:
 
-## Artifacts and Commands
+- The approval label is always `parity:approve`
+- Generated workflow policy lives in `.github/workflows/parity.yml`
+- If you want a different merge/write policy, edit the workflow directly
 
-The main analysis/write commands are:
+Legacy `approval` and `auto_run` sections are still accepted for backward compatibility, but they are deprecated and ignored by the supported scaffold/runtime path.
+
+## Main Commands
 
 - `parity run-stage 1`
 - `parity run-stage 2 --manifest`
 - `parity run-stage 3 --manifest --analysis`
 - `parity write-evals --proposal`
 
-The main runtime manifests are:
-
-- `BehaviorChangeManifest`
-- `EvalAnalysisManifest`
-- `EvalProposalManifest`
-
-## Context Files
-
-Parity still works without context, but bootstrap and synthesis quality drops sharply. At minimum, fill in:
-
-- `context/product.md`
-- `context/users.md`
-- `context/interactions.md`
-- `context/good_examples.md`
-- `context/bad_examples.md`
-
-If you add `context/traces/`, anonymize them before committing.
-
 ## Reference
 
-See [parity.yaml.example](../parity.yaml.example) for the full example configuration.
+See [parity.yaml.example](../parity.yaml.example) for the maintained example configuration.

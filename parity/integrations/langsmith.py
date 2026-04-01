@@ -34,6 +34,14 @@ def _langsmith_example_id(*, dataset_id: str, rendering: NativeEvalRendering) ->
     return uuid.uuid5(LANGSMITH_NAMESPACE, canonical_identity)
 
 
+def _dataset_selector(*, dataset_name: str | None = None, dataset_id: str | None = None) -> dict[str, str]:
+    if dataset_id:
+        return {"dataset_id": dataset_id}
+    if dataset_name:
+        return {"dataset_name": dataset_name}
+    raise ValueError("LangSmith operations require either dataset_id or dataset_name.")
+
+
 class LangSmithReader:
     def __init__(self, client: Client | None = None, *, api_key: str | None = None) -> None:
         self.client = client or Client(api_key=api_key)
@@ -45,7 +53,7 @@ class LangSmithReader:
         dataset_id: str | None = None,
         limit: int | None = None,
     ) -> list[EvalCaseSnapshot]:
-        dataset = self.client.read_dataset(dataset_name=dataset_name, dataset_id=dataset_id)
+        dataset = self.client.read_dataset(**_dataset_selector(dataset_name=dataset_name, dataset_id=dataset_id))
         examples = self.client.list_examples(dataset_id=str(dataset.id), limit=limit)
         normalized: list[EvalCaseSnapshot] = []
         for example in examples:
@@ -101,7 +109,7 @@ class LangSmithReader:
         dataset_name: str | None = None,
         dataset_id: str | None = None,
     ) -> list[EvaluatorBindingCandidate]:
-        dataset = self.client.read_dataset(dataset_name=dataset_name, dataset_id=dataset_id)
+        dataset = self.client.read_dataset(**_dataset_selector(dataset_name=dataset_name, dataset_id=dataset_id))
         resolved_dataset_id = str(dataset.id)
         candidates: dict[str, EvaluatorBindingCandidate] = {}
 
@@ -267,8 +275,11 @@ class LangSmithWriter:
         source_pr: int | None = None,
         source_commit: str | None = None,
     ) -> Any:
-        dataset = self.client.read_dataset(dataset_name=dataset_name, dataset_id=dataset_id)
-        resolved_dataset_id = str(dataset.id)
+        if dataset_id:
+            resolved_dataset_id = str(dataset_id)
+        else:
+            dataset = self.client.read_dataset(**_dataset_selector(dataset_name=dataset_name, dataset_id=dataset_id))
+            resolved_dataset_id = str(dataset.id)
         examples = []
         for rendering in renderings:
             if rendering.rendering_kind != "langsmith_example":

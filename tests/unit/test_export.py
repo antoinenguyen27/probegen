@@ -85,6 +85,20 @@ def test_render_pr_comment_distinguishes_degraded_analysis_from_confirmed_no_tar
     assert "No usable native eval target was discovered for `app/graph.py`" not in comment
 
 
+def test_render_pr_comment_includes_proposal_warnings() -> None:
+    proposal = EvalProposalManifest.model_validate(
+        {
+            **_load_fixture("sample_proposal.json"),
+            "warnings": ["Target `braintrust::demo` is missing Braintrust project metadata."],
+        }
+    )
+
+    comment = render_pr_comment(proposal)
+
+    assert "### Proposal Warnings" in comment
+    assert "missing Braintrust project metadata" in comment
+
+
 def test_render_summary_markdown_lists_intents() -> None:
     proposal = EvalProposalManifest.model_validate(_load_fixture("sample_proposal.json"))
     summary = render_summary_markdown(proposal)

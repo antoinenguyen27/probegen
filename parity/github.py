@@ -6,6 +6,7 @@ from typing import Any
 
 import httpx
 
+from parity.config import FIXED_APPROVAL_LABEL
 from parity.errors import GithubApiError
 from parity.models import (
     BehaviorChangeManifest,
@@ -347,6 +348,11 @@ def render_pr_comment(
             ]
         )
 
+    if proposal.warnings:
+        lines.extend(["### Proposal Warnings", ""])
+        lines.extend([f"> ⚠️ {warning}" for warning in proposal.warnings])
+        lines.append("")
+
     if stage2_manifest is not None:
         lines.extend(["### Resolved Targets", ""])
         for resolved_target in stage2_manifest.resolved_targets[:8]:
@@ -409,7 +415,7 @@ def render_pr_comment(
 
     lines.extend(
         [
-            "**To approve:** Add label `parity:approve` to this PR before merging.  ",
+            f"**To approve:** Add label `{FIXED_APPROVAL_LABEL}` to this PR before merging.  ",
             "**Full proposal:** `.parity/EvalProposalManifest.json`",
         ]
     )

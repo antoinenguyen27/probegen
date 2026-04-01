@@ -81,13 +81,5 @@ generation:
   candidate_intent_pool_limit: 12
   diversity_limit_per_gap: 2
 
-approval:
-  label: "parity:approve"
-
-auto_run:
-  enabled: true
-  fail_on: "regression_guard"
-  notify: "pr_comment"
-
 spend:
   analysis_total_spend_cap_usd: 2.50

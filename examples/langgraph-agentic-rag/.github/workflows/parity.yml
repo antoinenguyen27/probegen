@@ -39,7 +39,7 @@ jobs:
           pip install parity-ai
           npm install -g @anthropic-ai/claude-code
 
-      - name: Stage 1 - Change Detection
+      - name: Stage 1 — Change Detection
         id: stage1
         run: |
           echo "::group::Stage 1 — Change Detection (agent running)"
@@ -59,8 +59,8 @@ jobs:
                   f"cost={cost} duration={m.get('duration_ms','n/a')}ms "
                   f"turns={m.get('num_turns','n/a')} prompt_tokens={m.get('prompt_tokens','n/a')}"
               )
-          except Exception as e:
-              print(f"::warning::Could not read Stage 1 metadata: {e}")
+          except Exception as exc:
+              print(f"::warning::Could not read Stage 1 metadata: {exc}")
           PYEOF
           fi
         env:
@@ -82,11 +82,11 @@ jobs:
             echo "::notice::Gate CLOSED — no behavioral artifact changes, skipping Stage 2 & 3"
           fi
 
-      - name: Stage 2 - Eval Analysis
+      - name: Stage 2 — Eval Analysis
         id: stage2
         if: steps.gate.outputs.has_changes == 'true'
         run: |
-          echo "::group::Stage 2 — Coverage Analysis (agent running)"
+          echo "::group::Stage 2 — Eval Analysis (agent running)"
           parity run-stage 2 \
             --manifest .parity/stage1.json \
             --output .parity/stage2.json
@@ -102,8 +102,8 @@ jobs:
                   f"cost={cost} duration={m.get('duration_ms','n/a')}ms "
                   f"turns={m.get('num_turns','n/a')} prompt_tokens={m.get('prompt_tokens','n/a')}"
               )
-          except Exception as e:
-              print(f"::warning::Could not read Stage 2 metadata: {e}")
+          except Exception as exc:
+              print(f"::warning::Could not read Stage 2 metadata: {exc}")
           PYEOF
           fi
         env:
@@ -111,7 +111,7 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
 
-      - name: Stage 3 - Native Eval Synthesis
+      - name: Stage 3 — Native Eval Synthesis
         id: stage3
         if: steps.gate.outputs.has_changes == 'true'
         run: |
@@ -124,9 +124,10 @@ jobs:
           if [ -f .parity/metadata.json ]; then
             python3 - <<'PYEOF'
           import json
+          from pathlib import Path
           try:
               m = json.load(open(".parity/metadata.json"))
-              s3 = json.load(open(".parity/stage3.json")) if __import__("pathlib").Path(".parity/stage3.json").exists() else {}
+              s3 = json.load(open(".parity/stage3.json")) if Path(".parity/stage3.json").exists() else {}
               cost = f"${m['cost_usd']:.4f}" if m.get("cost_usd") is not None else "n/a"
               intents = s3.get("intent_count", "n/a")
               print(
@@ -134,8 +135,8 @@ jobs:
                   f"cost={cost} duration={m.get('duration_ms','n/a')}ms "
                   f"turns={m.get('num_turns','n/a')} intents_generated={intents}"
               )
-          except Exception as e:
-              print(f"::warning::Could not read Stage 3 metadata: {e}")
+          except Exception as exc:
+              print(f"::warning::Could not read Stage 3 metadata: {exc}")
           PYEOF
           fi
         env:
@@ -145,21 +146,19 @@ jobs:
         if: always()
         run: |
           python3 - <<'PYEOF'
-          import json, os, pathlib
+          import json, os
+          from pathlib import Path
 
           def load(path):
-              p = pathlib.Path(path)
+              p = Path(path)
               return json.loads(p.read_text()) if p.exists() else {}
 
           s1 = load(".parity/stage1.json")
           s3 = load(".parity/stage3.json")
-
           pr = "${{ github.event.pull_request.number }}"
           sha = "${{ github.event.pull_request.head.sha }}"[:7]
-          artifacts = len(s1.get("hint_matched_artifacts", []))
-          has_changes = s1.get("has_changes", False)
-          intents = s3.get("intent_count", 0) if has_changes else 0
-
+          changes = len(s1.get("changes", []))
+          intents = s3.get("intent_count", 0) if s1.get("has_changes") else 0
           lines = [
               "## Parity Run Summary",
               "",
@@ -167,14 +166,13 @@ jobs:
               "|-------|-------|",
               f"| PR | #{pr} |",
               f"| SHA | `{sha}` |",
-              f"| Behavioral artifacts changed | {artifacts} |",
-              f"| Intents generated | {intents} |",
+              f"| Behavioral changes detected | {changes} |",
+              f"| Proposed evals | {intents} |",
           ]
-
           summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
           if summary_path:
-              with open(summary_path, "a") as f:
-                  f.write("\n".join(lines) + "\n")
+              with open(summary_path, "a", encoding="utf-8") as handle:
+                  handle.write("\n".join(lines) + "\n")
           PYEOF
 
       - name: Upload artifacts

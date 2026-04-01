@@ -175,6 +175,8 @@ def build_raw_change_data(
         config = ParityConfig.load(config_path, allow_missing=allow_missing_config)
     except ConfigError as exc:
         raise ConfigError(str(exc)) from exc
+    for warning in config.compatibility_warnings():
+        click.echo(f"parity: warning: {warning}", err=True)
 
     payload = _read_event_payload(env)
     all_changed_files = _list_all_changed_files(base_branch)

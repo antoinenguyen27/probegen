@@ -149,3 +149,28 @@ spend:
 
     with pytest.raises(ConfigError):
         ParityConfig.load(config_path)
+
+
+def test_config_reports_deprecated_workflow_sections(tmp_path: Path) -> None:
+    config_path = tmp_path / "parity.yaml"
+    config_path.write_text(
+        """
+version: 2
+approval:
+  label: custom:approve
+auto_run:
+  enabled: false
+""".strip(),
+        encoding="utf-8",
+    )
+
+    config = ParityConfig.load(config_path)
+
+    assert config.compatibility_warnings() == [
+        "`approval` is deprecated and ignored. Parity always uses the fixed GitHub label `parity:approve`.",
+        "`auto_run` is deprecated and ignored. Edit `.github/workflows/parity.yml` directly to change workflow policy.",
+    ]
+
+
+def test_config_without_legacy_workflow_sections_has_no_compatibility_warnings() -> None:
+    assert ParityConfig.model_validate({}).compatibility_warnings() == []

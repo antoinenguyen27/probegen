@@ -52,6 +52,8 @@ def setup_mcp_command(config_path: Path, output_path: Path) -> None:
     except ConfigError as exc:
         click.echo(str(exc), err=True)
         raise SystemExit(1) from exc
+    for warning in config.compatibility_warnings():
+        click.echo(f"parity: warning: {warning}", err=True)
 
     payload = generate_mcp_config(config, dict(os.environ))
     output_path.parent.mkdir(parents=True, exist_ok=True)

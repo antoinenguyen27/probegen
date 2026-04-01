@@ -129,7 +129,7 @@ def load_context_pack(
         for warning in warnings:
             _warn(warning)
         _warn(
-            "Context pack not configured completely; probe quality may be reduced."
+            "Context pack not configured completely; analysis and synthesis quality may be reduced."
         )
 
     return pack

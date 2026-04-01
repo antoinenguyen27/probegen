@@ -31,7 +31,7 @@ The demo patch (`changes/always_cite.patch`) modifies one constant:
 
 - **`GENERATE_PROMPT`**: adds two sentences requiring the generator to cite the source blog post for each claim, and to avoid fabricating a source when the origin cannot be determined
 
-The change sounds entirely reasonable — citations improve transparency. The non-obvious risk is that `retrieve_blog_posts` returns raw `page_content` only, with no source metadata. The model must infer which blog post a chunk came from based on text alone, and may fabricate or misattribute citations when chunks are ambiguous. Parity's Stage 1 flags this gap. Stage 2 identifies that no existing baseline cases test citation presence or accuracy. Stage 3 proposes probes targeting those specific gaps.
+The change sounds entirely reasonable — citations improve transparency. The non-obvious risk is that `retrieve_blog_posts` returns raw `page_content` only, with no source metadata. The model must infer which blog post a chunk came from based on text alone, and may fabricate or misattribute citations when chunks are ambiguous. Parity's Stage 1 flags this gap. Stage 2 identifies that no existing baseline cases test citation presence or accuracy. Stage 3 proposes evals targeting those specific gaps.
 
 ---
 
