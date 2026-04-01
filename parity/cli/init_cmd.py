@@ -566,11 +566,12 @@ def scan_guardrail_artifacts(root: Path) -> list[str]:
 
 def _confirm_list(prompt: str, items: list[str]) -> list[str]:
     if not items:
+        click.echo(f"{prompt}  (none detected)")
         return []
     click.echo(prompt)
     for item in items:
         click.echo(f"  - {item}")
-    response = click.prompt("", default="Y")
+    response = click.prompt("[Y/n/edit]", default="Y", show_default=False)
     lowered = response.strip().lower()
     if lowered in {"y", "yes", ""}:
         return items
@@ -584,9 +585,9 @@ def _confirm_list(prompt: str, items: list[str]) -> list[str]:
 
 
 def _selected_platforms() -> PlatformsConfig:
-    click.echo("3. Which eval platform do you use?")
-    click.echo("  [1] LangSmith  [2] Braintrust  [3] Arize Phoenix  [4] Promptfoo  [5] None / file export")
-    choice = click.prompt("Selection", default="5").strip()
+    click.echo("Which eval platform do you use?")
+    click.echo("  [1] LangSmith  [2] Braintrust  [3] Arize Phoenix  [4] Promptfoo  [5] None / file export (default)")
+    choice = click.prompt("Selection", default="5", show_default=False).strip()
     platforms = PlatformsConfig()
     for item in {part.strip() for part in choice.split(",") if part.strip()}:
         if item == "1":
@@ -637,13 +638,15 @@ def init_command(context_only: bool, dry_run: bool) -> None:
             return
 
         behavior = _confirm_list(
-            "1. Detected these likely behavior-defining artifacts (hint patterns to help Parity focus faster):",
+            "Detected these likely behavior-defining artifacts (hint patterns to help Parity focus faster):",
             scan_behavior_artifacts(root),
         )
+        click.echo("")
         guardrails = _confirm_list(
-            "2. Detected these likely guardrail artifacts (hint patterns for judges, validators, classifiers):",
+            "Detected these likely guardrail artifacts (hint patterns for judges, validators, classifiers):",
             scan_guardrail_artifacts(root),
         )
+        click.echo("")
         platforms = _selected_platforms()
         mapping_platform = _default_mapping_platform(platforms)
 
@@ -651,7 +654,7 @@ def init_command(context_only: bool, dry_run: bool) -> None:
         if mapping_platform:
             for artifact in behavior + guardrails:
                 target = click.prompt(
-                    f"4. For artifact '{artifact}', which target or config path contains existing evals? (blank to allow discovery/bootstrap)",
+                    f"For artifact '{artifact}', which target or config path contains existing evals? (blank to allow discovery/bootstrap)",
                     default="",
                     show_default=False,
                 ).strip()
@@ -664,8 +667,9 @@ def init_command(context_only: bool, dry_run: bool) -> None:
                         )
                     )
 
+        click.echo("")
         create_context = click.confirm(
-            "5. Create a context/ directory with stub files?",
+            "Create a context/ directory with stub files?",
             default=True,
         )
 
@@ -701,12 +705,23 @@ def init_command(context_only: bool, dry_run: bool) -> None:
 
         click.echo("")
         click.echo("Setup complete. Next steps:")
-        click.echo("  1. Fill in context/ files with product details and known failure modes.")
-        click.echo("  2. Add GitHub secrets: ANTHROPIC_API_KEY, OPENAI_API_KEY (+ eval platform keys).")
-        click.echo("  3. Create the approval label in GitHub:")
-        click.echo(f'       gh label create "{FIXED_APPROVAL_LABEL}" --color 0075ca --description "Approve Parity eval writeback"')
-        click.echo("  4. Commit parity.yaml, .github/workflows/parity.yml, and context/.")
-        click.echo("  5. Run `parity doctor` to verify your setup.")
+        steps: list[str] = []
+        if create_context:
+            steps.append("Fill in context/ files with product details and known failure modes.")
+        steps.append("Add GitHub secrets: ANTHROPIC_API_KEY, OPENAI_API_KEY (+ eval platform keys).")
+        steps.append(
+            "Create the approval label in GitHub:\n"
+            f'       gh label create "{FIXED_APPROVAL_LABEL}" --color 0075ca --description "Approve Parity eval writeback"'
+        )
+        commit_files = (
+            "parity.yaml, .github/workflows/parity.yml, and context/"
+            if create_context
+            else "parity.yaml and .github/workflows/parity.yml"
+        )
+        steps.append(f"Commit {commit_files}.")
+        steps.append("Run `parity doctor` to verify your setup.")
+        for i, step in enumerate(steps, 1):
+            click.echo(f"  {i}. {step}")
     except click.Abort as exc:
         raise SystemExit(1) from exc
     except OSError as exc:

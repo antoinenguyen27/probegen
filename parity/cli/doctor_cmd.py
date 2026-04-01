@@ -147,7 +147,8 @@ def _format_checks(checks: list[tuple[bool, str]]) -> str:
     lines = []
     for ok, message in checks:
         symbol = "✓" if ok else "✗"
-        lines.append(f"  {symbol} {message}")
+        line = click.style(f"  {symbol} {message}", fg="green" if ok else "red")
+        lines.append(line)
     return "\n".join(lines)
 
 

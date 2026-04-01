@@ -342,6 +342,7 @@ def run_stage_command(
     try:
         if stage == 1:
             if pr_number is None or base_branch is None:
+                click.echo("parity run-stage 1 requires --pr-number and --base-branch", err=True)
                 raise SystemExit(5)
             click.echo(f"[parity] Stage 1 starting — PR #{pr_number}, base={base_branch}", err=True)
             raw_change_data = build_raw_change_data(
@@ -360,6 +361,7 @@ def run_stage_command(
             )
         elif stage == 2:
             if manifest_path is None:
+                click.echo("parity run-stage 2 requires --manifest", err=True)
                 raise SystemExit(5)
             manifest = _load_json(manifest_path)
             change_count = len(manifest.get("changes", []))
@@ -374,6 +376,7 @@ def run_stage_command(
             )
         else:
             if manifest_path is None or analysis_path is None:
+                click.echo("parity run-stage 3 requires --manifest and --analysis", err=True)
                 raise SystemExit(5)
             manifest = _load_json(manifest_path)
             analysis = _load_json(analysis_path)

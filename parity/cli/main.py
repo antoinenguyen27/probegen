@@ -23,17 +23,23 @@ def cli() -> None:
 
 
 cli.add_command(doctor_command)
-cli.add_command(embed_batch_command)
-cli.add_command(find_similar_batch_command)
-cli.add_command(find_similar_command)
-cli.add_command(get_behavior_diff_command)
 cli.add_command(init_command)
-cli.add_command(post_comment_command)
-cli.add_command(resolve_run_id_command)
 cli.add_command(run_stage_command)
 cli.add_command(setup_mcp_command)
 cli.add_command(write_evals_command)
-cli.add_command(post_write_comment_command)
+
+# CI/internal plumbing — callable but not listed in --help
+for _cmd in [
+    embed_batch_command,
+    find_similar_batch_command,
+    find_similar_command,
+    get_behavior_diff_command,
+    post_comment_command,
+    post_write_comment_command,
+    resolve_run_id_command,
+]:
+    _cmd.hidden = True
+    cli.add_command(_cmd)
 
 
 if __name__ == "__main__":

@@ -34,14 +34,15 @@ More detail: [docs/platforms.md](docs/platforms.md)
 
 These are the commands most users need:
 
-- `parity init`
-- `parity doctor`
-- `parity run-stage 1`
-- `parity run-stage 2`
-- `parity run-stage 3`
-- `parity write-evals`
+- `parity init` — scaffold `parity.yaml`, the GitHub Actions workflow, and `context/` stubs
+- `parity doctor` — verify your setup and environment
+- `parity run-stage 1` — detect behavioral artifact changes in a PR
+- `parity run-stage 2` — analyze coverage gaps against existing evals
+- `parity run-stage 3` — synthesize native eval proposals
+- `parity write-evals` — write approved evals to your platform after merge
+- `parity setup-mcp` — generate an MCP server config from `parity.yaml` (for local agent tooling)
 
-Parity also ships lower-level operational commands for GitHub comments, run lookup, embeddings, and similarity, but those are advanced surfaces rather than the main product path.
+Internal CI commands (`post-comment`, `resolve-run-id`, etc.) are used by the generated workflow and are not intended to be called directly.
 
 ## Quick Start
 
