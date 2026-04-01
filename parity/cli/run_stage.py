@@ -45,6 +45,14 @@ def _stage_metadata_path(directory: Path, stage: int) -> Path:
     return directory / f"stage{stage}.metadata.json"
 
 
+def _stage_diagnostics_path(directory: Path, stage: int) -> Path:
+    return directory / f"stage{stage}.diagnostics.json"
+
+
+def _stage_debug_log_path(directory: Path, stage: int) -> Path:
+    return directory / f"stage{stage}.debug.log"
+
+
 def _write_stage_metadata(output_path: Path, stage: int, payload: dict[str, Any]) -> None:
     _write_json(output_path.parent / "metadata.json", payload)
     _write_json(_stage_metadata_path(output_path.parent, stage), payload)
@@ -204,10 +212,82 @@ def _build_budget_failure_metadata(
         "error": exc.message,
     }
     if exc.details:
-        metadata.update(exc.details)
+        metadata.update(_sanitize_failure_details(exc.details))
     if extra:
         metadata.update(extra)
     return metadata
+
+
+def _sanitize_failure_details(details: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(details, dict):
+        return {}
+    return {
+        key: value
+        for key, value in details.items()
+        if key not in {"diagnostics", "debug_log_lines"}
+    }
+
+
+def _write_stage_diagnostics_artifacts(
+    output_path: Path,
+    stage: int,
+    payload: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
+
+    artifact_metadata: dict[str, Any] = {}
+    diagnostics = payload.get("diagnostics")
+    if isinstance(diagnostics, dict):
+        diagnostics_path = _stage_diagnostics_path(output_path.parent, stage)
+        _write_json(diagnostics_path, diagnostics)
+        artifact_metadata["diagnostics_artifact"] = diagnostics_path.name
+
+    debug_log_lines = payload.get("debug_log_lines")
+    if isinstance(debug_log_lines, list) and debug_log_lines:
+        debug_log_path = _stage_debug_log_path(output_path.parent, stage)
+        debug_log_path.parent.mkdir(parents=True, exist_ok=True)
+        debug_log_path.write_text("\n".join(str(line) for line in debug_log_lines) + "\n", encoding="utf-8")
+        artifact_metadata["debug_log_artifact"] = debug_log_path.name
+
+    return artifact_metadata
+
+
+def _build_stage_failure_metadata(
+    stage: int,
+    exc: StageError,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    metadata = {
+        "stage": stage,
+        "status": "failed",
+        "cost_usd": exc.cost_usd,
+        "error": exc.message,
+    }
+    if exc.details:
+        metadata.update(_sanitize_failure_details(exc.details))
+    if extra:
+        metadata.update(extra)
+    return metadata
+
+
+def _echo_failure_details(exc: StageError) -> None:
+    click.echo(str(exc), err=True)
+    failure = exc.details.get("failure") if isinstance(exc.details, dict) else None
+    if not isinstance(failure, dict):
+        return
+
+    summary = failure.get("summary")
+    if isinstance(summary, str) and summary.strip():
+        click.echo(f"[parity] Cause — {summary}", err=True)
+
+    request_id = failure.get("request_id")
+    if isinstance(request_id, str) and request_id:
+        click.echo(f"[parity] Request ID — {request_id}", err=True)
+
+    next_action = failure.get("next_action")
+    if isinstance(next_action, str) and next_action.strip():
+        click.echo(f"[parity] Action — {next_action}", err=True)
 
 
 @click.command("run-stage")
@@ -322,23 +402,32 @@ def run_stage_command(
     except BudgetExceededError as exc:
         if exc.partial_result is not None:
             _write_json(output_path, exc.partial_result)
+        failure_metadata = _build_budget_failure_metadata(stage, exc, extra=budget_metadata)
+        failure_metadata.update(_write_stage_diagnostics_artifacts(output_path, stage, exc.details))
         _write_stage_metadata(
             output_path,
             stage,
-            _build_budget_failure_metadata(stage, exc, extra=budget_metadata),
+            failure_metadata,
         )
-        click.echo(str(exc), err=True)
+        _echo_failure_details(exc)
         raise SystemExit(3) from exc
     except SchemaValidationError as exc:
-        click.echo(str(exc), err=True)
+        failure_metadata = _build_stage_failure_metadata(stage, exc, extra=budget_metadata)
+        failure_metadata.update(_write_stage_diagnostics_artifacts(output_path, stage, exc.details))
+        _write_stage_metadata(output_path, stage, failure_metadata)
+        _echo_failure_details(exc)
         raise SystemExit(2) from exc
     except GitDiffError as exc:
         click.echo(str(exc), err=True)
         raise SystemExit(4) from exc
     except StageError as exc:
-        click.echo(str(exc), err=True)
+        failure_metadata = _build_stage_failure_metadata(stage, exc, extra=budget_metadata)
+        failure_metadata.update(_write_stage_diagnostics_artifacts(output_path, stage, exc.details))
+        _write_stage_metadata(output_path, stage, failure_metadata)
+        _echo_failure_details(exc)
         raise SystemExit(1) from exc
 
+    metadata.update(_write_stage_diagnostics_artifacts(output_path, stage, result.extras))
     _write_json(output_path, result.data.model_dump(mode="json"))
     _write_stage_metadata(output_path, stage, metadata)
 

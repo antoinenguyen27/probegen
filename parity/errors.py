@@ -23,11 +23,6 @@ class GitDiffError(ParityError):
 class EventPayloadError(ParityError):
     """Raised when the GitHub event payload is missing or malformed."""
 
-
-class SchemaValidationError(ParityError):
-    """Raised when stage output does not satisfy the expected contract."""
-
-
 class EmbeddingError(ParityError):
     """Raised when embeddings cannot be created."""
 
@@ -56,6 +51,10 @@ class StageError(ParityError):
     def __str__(self) -> str:
         stage_prefix = f"Stage {self.stage}: " if self.stage is not None else ""
         return f"{stage_prefix}{self.message}"
+
+
+class SchemaValidationError(StageError):
+    """Raised when stage output does not satisfy the expected contract."""
 
 
 @dataclass(slots=True)

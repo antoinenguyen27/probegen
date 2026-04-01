@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 from pydantic import BaseModel
 
-from parity.errors import BudgetExceededError
+from parity.errors import BudgetExceededError, StageError
 from parity.stages import _common
 
 
@@ -162,3 +162,86 @@ def test_run_query_applies_normalize_payload_before_validation(monkeypatch: pyte
     )
 
     assert result.data.last_verified_at is None
+
+
+def test_classify_stage_failure_parses_anthropic_billing_error_payload() -> None:
+    failure = _common.classify_stage_failure(
+        raw_result='{"type":"error","error":{"type":"billing_error","message":"Your organization is out of credits."},"request_id":"req_abc123"}'
+    )
+
+    assert failure["category"] == "billing"
+    assert failure["provider"] == "anthropic"
+    assert failure["http_status"] == 402
+    assert failure["provider_error_type"] == "billing_error"
+    assert failure["request_id"] == "req_abc123"
+
+
+def test_classify_stage_failure_parses_anthropic_invalid_request_payload() -> None:
+    failure = _common.classify_stage_failure(
+        raw_result='{"type":"error","error":{"type":"invalid_request_error","message":"Prompt is too large."},"request_id":"req_invalid400"}'
+    )
+
+    assert failure["category"] == "provider_invalid_request"
+    assert failure["provider"] == "anthropic"
+    assert failure["http_status"] == 400
+    assert failure["provider_error_type"] == "invalid_request_error"
+    assert failure["request_id"] == "req_invalid400"
+
+
+def test_run_query_classifies_provider_errors_and_captures_diagnostics(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_query(*, prompt: str, options) -> object:
+        yield _FakeResultMessage(
+            subtype="error_during_execution",
+            is_error=True,
+            result='{"type":"error","error":{"type":"billing_error","message":"Your organization is out of credits."},"request_id":"req_billing001"}',
+        )
+
+    monkeypatch.setattr(_common, "AssistantMessage", _FakeAssistantMessage)
+    monkeypatch.setattr(_common, "TaskProgressMessage", _FakeTaskProgressMessage)
+    monkeypatch.setattr(_common, "ResultMessage", _FakeResultMessage)
+    monkeypatch.setattr(_common, "query", fake_query)
+
+    with pytest.raises(StageError) as exc_info:
+        asyncio.run(
+            _common._run_query(
+                stage_num=2,
+                prompt="test",
+                options=SimpleNamespace(
+                    max_turns=10,
+                    max_budget_usd=1.0,
+                    output_format={"type": "json_schema", "schema": {"type": "object", "properties": {}}},
+                    extra_args={},
+                ),
+                output_model=_OutputModel,
+            )
+        )
+
+    failure = exc_info.value.details["failure"]
+    diagnostics = exc_info.value.details["diagnostics"]
+    assert failure["category"] == "billing"
+    assert failure["request_id"] == "req_billing001"
+    assert diagnostics["failure"]["category"] == "billing"
+    assert diagnostics["result_subtype"] == "error_during_execution"
+
+
+def test_build_metadata_excludes_diagnostics_and_debug_log_lines() -> None:
+    metadata = _common.build_metadata(
+        2,
+        _common.StageRunResult(
+            data={"ok": True},
+            model="claude-sonnet-4-6",
+            cost_usd=0.1,
+            duration_ms=123,
+            num_turns=2,
+            timestamp="2026-04-01T00:00:00Z",
+            extras={
+                "assistant_messages": 1,
+                "diagnostics": {"completed": True},
+                "debug_log_lines": ["debug"],
+            },
+        ),
+    )
+
+    assert metadata["assistant_messages"] == 1
+    assert "diagnostics" not in metadata
+    assert "debug_log_lines" not in metadata

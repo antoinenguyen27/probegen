@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
-from parity.cli.run_stage import _build_effective_spend_caps
+from parity.cli.run_stage import _build_effective_spend_caps, _write_stage_diagnostics_artifacts
 from parity.config import ParityConfig
 
 
@@ -69,3 +72,26 @@ def test_build_effective_spend_caps_auto_policy_keeps_explicit_stage_overrides_s
 
     assert effective.stage2_agent_cap_usd == pytest.approx(0.5)
     assert metadata["budget_policy_applied"] == "static"
+
+
+def test_write_stage_diagnostics_artifacts_writes_json_and_debug_log(tmp_path: Path) -> None:
+    output_path = tmp_path / "stage2.json"
+    payload = {
+        "diagnostics": {
+            "stage": 2,
+            "completed": False,
+            "failure": {"category": "billing"},
+        },
+        "debug_log_lines": ["line one", "line two"],
+    }
+
+    metadata = _write_stage_diagnostics_artifacts(output_path, 2, payload)
+
+    diagnostics_path = tmp_path / "stage2.diagnostics.json"
+    debug_log_path = tmp_path / "stage2.debug.log"
+    assert metadata == {
+        "diagnostics_artifact": "stage2.diagnostics.json",
+        "debug_log_artifact": "stage2.debug.log",
+    }
+    assert json.loads(diagnostics_path.read_text(encoding="utf-8"))["failure"]["category"] == "billing"
+    assert debug_log_path.read_text(encoding="utf-8") == "line one\nline two\n"
