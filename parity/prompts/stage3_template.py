@@ -74,6 +74,7 @@ RULES:
 - For bootstrap gaps, generate plausible starter eval intents without pretending there is existing corpus coverage.
 - Make `pass_criteria` explicit enough for a deterministic renderer to map into native assertions.
 - `failure_mode` should explain the likely miss or regression the eval should expose.
+- Use `eval_quality_notes` only for observations about eval quality: testability limitations, evaluator regime recommendations, assertion operator guidance, or confidence rationale. Do not report tool errors, permission issues, or infrastructure status — the host tracks those independently.
 
 Output EvalIntentCandidateBundle JSON only. No prose.
 """

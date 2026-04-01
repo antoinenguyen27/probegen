@@ -205,7 +205,7 @@ class RenderArtifact(ParityModel):
 
 class EvalIntentCandidateBundle(ParityModel):
     intents: list[ProbeIntentDraft] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
+    eval_quality_notes: list[str] = Field(default_factory=list)
 
 
 class EvalProposalManifest(ParityModel):

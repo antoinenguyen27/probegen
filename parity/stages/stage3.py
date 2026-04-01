@@ -322,7 +322,7 @@ def run_stage3(
         if intent.target_id in resolved_targets
     ]
 
-    warnings = list(result.data.warnings)
+    warnings = list(result.data.eval_quality_notes)
     warnings.extend(materialization_warnings)
     if context.warnings:
         warnings.extend(context.warnings)
