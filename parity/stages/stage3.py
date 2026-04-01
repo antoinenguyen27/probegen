@@ -8,10 +8,14 @@ from pathlib import Path
 
 from parity.config import ParityConfig, ResolvedSpendCaps
 from parity.context import count_tokens
+from parity.errors import SchemaValidationError
 from parity.models import (
+    CoverageGap,
     EvalAnalysisManifest,
     EvalIntentCandidateBundle,
     EvalProposalManifest,
+    ProbeIntent,
+    ProbeIntentDraft,
     normalize_behavior_change_manifest_payload,
 )
 from parity.prompts.stage3_template import (
@@ -40,6 +44,156 @@ def _proposal_target_profile(resolved_target):
     if profile.platform == "braintrust" and not (profile.project or "").strip() and profile.write_capability == "native_ready":
         return profile.model_copy(update={"write_capability": "review_only"})
     return profile
+
+
+def _dedupe_strings(values: list[str]) -> list[str]:
+    return list(dict.fromkeys(value for value in values if value))
+
+
+def _usable_conversation_payload(draft: ProbeIntentDraft) -> tuple[list[dict[str, str]], list[str]]:
+    messages: list[dict[str, str]] = []
+    dropped_indexes: list[int] = []
+    for index, message in enumerate(draft.conversation_input, start=1):
+        role = (message.role or "").strip()
+        content = message.content
+        if not role or not isinstance(content, str) or not content.strip():
+            dropped_indexes.append(index)
+            continue
+        messages.append({"role": role, "content": content})
+
+    warnings: list[str] = []
+    if dropped_indexes:
+        warnings.append(
+            f"Intent `{draft.intent_id}` dropped malformed conversation turns at positions {dropped_indexes} during host assembly."
+        )
+    return messages, warnings
+
+
+def _resolve_draft_input(
+    draft: ProbeIntentDraft,
+    *,
+    conversational_gap: bool,
+) -> tuple[str, str | dict | list[dict[str, str]], list[str]]:
+    warnings: list[str] = []
+    conversation_payload, conversation_warnings = _usable_conversation_payload(draft)
+    warnings.extend(conversation_warnings)
+
+    candidates: dict[str, str | dict | list[dict[str, str]]] = {}
+    if draft.string_input is not None:
+        candidates["string"] = draft.string_input
+    if draft.dict_input is not None:
+        candidates["dict"] = draft.dict_input
+    if conversation_payload:
+        candidates["conversation"] = conversation_payload
+
+    if draft.input_format in candidates:
+        chosen_format = draft.input_format
+        chosen_input = candidates[chosen_format]
+    elif draft.input_format == "conversation" and draft.string_input is not None:
+        chosen_format = "conversation"
+        chosen_input = [{"role": "user", "content": draft.string_input}]
+        warnings.append(
+            f"Intent `{draft.intent_id}` declared `conversation` input but only provided `string_input`; "
+            "host wrapped it into a single-turn conversation."
+        )
+    elif len(candidates) == 1:
+        chosen_format, chosen_input = next(iter(candidates.items()))
+        warnings.append(
+            f"Intent `{draft.intent_id}` declared input_format `{draft.input_format}` but only "
+            f"`{chosen_format}` input was usable; host corrected the format."
+        )
+    elif candidates:
+        for fallback_format in ("conversation", "dict", "string"):
+            if fallback_format in candidates:
+                chosen_format = fallback_format
+                chosen_input = candidates[fallback_format]
+                break
+        warnings.append(
+            f"Intent `{draft.intent_id}` populated conflicting input fields; host kept `{chosen_format}` and ignored the rest."
+        )
+    else:
+        raise ValueError("did not provide any usable input fields")
+
+    if conversational_gap and chosen_format != "conversation":
+        if chosen_format == "string":
+            warnings.append(
+                f"Intent `{draft.intent_id}` targeted a conversational gap without `conversation_input`; "
+                "host wrapped `string_input` into a single-turn conversation."
+            )
+            chosen_format = "conversation"
+            chosen_input = [{"role": "user", "content": str(chosen_input)}]
+        else:
+            raise ValueError("conversational gaps require `conversation_input` or a `string_input` fallback")
+
+    return chosen_format, chosen_input, warnings
+
+
+def _materialize_probe_intent_draft(
+    draft: ProbeIntentDraft,
+    gap: CoverageGap,
+) -> tuple[ProbeIntent, list[str]]:
+    input_format, resolved_input, warnings = _resolve_draft_input(
+        draft,
+        conversational_gap=gap.is_conversational,
+    )
+    intent = ProbeIntent.model_validate(
+        {
+            "intent_id": draft.intent_id,
+            "gap_id": gap.gap_id,
+            "target_id": gap.target_id,
+            "method_kind": gap.method_kind,
+            "intent_type": draft.intent_type,
+            "title": draft.title,
+            "is_conversational": input_format == "conversation",
+            "input": resolved_input,
+            "input_format": input_format,
+            "behavior_under_test": draft.behavior_under_test,
+            "pass_criteria": draft.pass_criteria,
+            "failure_mode": draft.failure_mode,
+            "probe_rationale": draft.probe_rationale,
+            "related_risk_flag": gap.related_risk_flag,
+            "native_metadata_hints": (
+                {"recommended_eval_area": gap.recommended_eval_area}
+                if gap.recommended_eval_area
+                else {}
+            ),
+            "native_tag_hints": _dedupe_strings([gap.recommended_eval_area or ""]),
+            "native_shape_notes": list(gap.native_shape_hints),
+            "evaluator_dossier_id": gap.evaluator_dossier_ids[0] if len(gap.evaluator_dossier_ids) == 1 else None,
+            "nearest_existing_case_id": draft.nearest_existing_case_id,
+            "nearest_existing_similarity": draft.nearest_existing_similarity,
+            "specificity_confidence": draft.specificity_confidence,
+            "testability_confidence": draft.testability_confidence,
+            "novelty_confidence": draft.novelty_confidence,
+            "realism_confidence": draft.realism_confidence,
+            "target_fit_confidence": draft.target_fit_confidence,
+        }
+    )
+    return intent, warnings
+
+
+def materialize_intent_candidates(
+    candidate_bundle: EvalIntentCandidateBundle,
+    analysis: EvalAnalysisManifest,
+) -> tuple[list[ProbeIntent], list[str]]:
+    gap_lookup = {gap.gap_id: gap for gap in analysis.gaps}
+    materialized: list[ProbeIntent] = []
+    warnings: list[str] = []
+
+    for draft in candidate_bundle.intents:
+        gap = gap_lookup.get(draft.gap_id)
+        if gap is None:
+            warnings.append(f"Intent `{draft.intent_id}` referenced unknown gap `{draft.gap_id}` and was dropped.")
+            continue
+        try:
+            intent, draft_warnings = _materialize_probe_intent_draft(draft, gap)
+        except Exception as exc:
+            warnings.append(f"Intent `{draft.intent_id}` was dropped during host assembly: {exc}")
+            continue
+        materialized.append(intent)
+        warnings.extend(draft_warnings)
+
+    return materialized, warnings
 
 
 def run_stage3(
@@ -102,8 +256,28 @@ def run_stage3(
 
     analysis = EvalAnalysisManifest.model_validate(stage2_manifest)
     raw_intent_count = len(result.data.intents)
-    ranked = rank_probe_intents(result.data.intents, analysis.gaps)
-    print(f"[stage-3] intents_raw={raw_intent_count} intents_ranked={len(ranked)}", file=sys.stderr, flush=True)
+    materialized_intents, materialization_warnings = materialize_intent_candidates(result.data, analysis)
+    dropped_intent_count = raw_intent_count - len(materialized_intents)
+    print(
+        f"[stage-3] intents_raw={raw_intent_count} intents_materialized={len(materialized_intents)} "
+        f"intents_dropped={dropped_intent_count}",
+        file=sys.stderr,
+        flush=True,
+    )
+
+    if gap_count > 0 and raw_intent_count > 0 and not materialized_intents:
+        preview = "; ".join(materialization_warnings[:3]) or "No usable probe intents survived host assembly."
+        raise SchemaValidationError(
+            f"Stage 3 produced no usable probe intents after host assembly. {preview}",
+            stage=3,
+            details={
+                "dropped_intent_count": dropped_intent_count,
+                "materialization_warnings": materialization_warnings,
+            },
+        )
+
+    ranked = rank_probe_intents(materialized_intents, analysis.gaps)
+    print(f"[stage-3] intents_ranked={len(ranked)}", file=sys.stderr, flush=True)
 
     diversified = apply_intent_diversity_limit(
         ranked,
@@ -149,6 +323,7 @@ def run_stage3(
     ]
 
     warnings = list(result.data.warnings)
+    warnings.extend(materialization_warnings)
     if context.warnings:
         warnings.extend(context.warnings)
     warnings.extend(_proposal_target_warnings(analysis.resolved_targets))
@@ -178,6 +353,8 @@ def run_stage3(
         "proposal_limit": config.generation.proposal_limit,
         "stage3_input_context_limit_tokens": stage3_input_context_limit_tokens,
         "intents_raw": raw_intent_count,
+        "intents_materialized": len(materialized_intents),
+        "intents_dropped": dropped_intent_count,
         "intents_after_diversity_limit": len(diversified),
         "intents_final": len(final_intents),
         "resolved_spend_caps": {

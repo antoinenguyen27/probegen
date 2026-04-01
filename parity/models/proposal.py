@@ -32,6 +32,53 @@ RenderingKind = Literal[
 ]
 
 
+def _validate_probability_field(value: float | None) -> float | None:
+    if value is None:
+        return value
+    if not 0.0 <= value <= 1.0:
+        raise ValueError("confidence and similarity values must be between 0 and 1")
+    return value
+
+
+class ConversationMessageDraft(ParityModel):
+    role: str | None = None
+    content: str | None = None
+
+
+class ProbeIntentDraft(ParityModel):
+    intent_id: str
+    gap_id: str
+    intent_type: IntentType
+    title: str
+    input_format: InputFormat
+    string_input: str | None = None
+    dict_input: dict[str, Any] | None = None
+    conversation_input: list[ConversationMessageDraft] = Field(default_factory=list)
+    behavior_under_test: str
+    pass_criteria: str
+    failure_mode: str
+    probe_rationale: str
+    nearest_existing_case_id: str | None = None
+    nearest_existing_similarity: float | None = None
+    specificity_confidence: float
+    testability_confidence: float
+    novelty_confidence: float
+    realism_confidence: float
+    target_fit_confidence: float
+
+    @field_validator(
+        "specificity_confidence",
+        "testability_confidence",
+        "novelty_confidence",
+        "realism_confidence",
+        "target_fit_confidence",
+        "nearest_existing_similarity",
+    )
+    @classmethod
+    def validate_probability_fields(cls, value: float | None) -> float | None:
+        return _validate_probability_field(value)
+
+
 class ProbeIntent(ParityModel):
     intent_id: str
     gap_id: str
@@ -74,11 +121,7 @@ class ProbeIntent(ParityModel):
     )
     @classmethod
     def validate_probability_fields(cls, value: float | None) -> float | None:
-        if value is None:
-            return value
-        if not 0.0 <= value <= 1.0:
-            raise ValueError("confidence and similarity values must be between 0 and 1")
-        return value
+        return _validate_probability_field(value)
 
     @model_validator(mode="after")
     def validate_input_shape(self) -> "ProbeIntent":
@@ -161,7 +204,7 @@ class RenderArtifact(ParityModel):
 
 
 class EvalIntentCandidateBundle(ParityModel):
-    intents: list[ProbeIntent] = Field(default_factory=list)
+    intents: list[ProbeIntentDraft] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 
 

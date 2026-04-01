@@ -51,7 +51,7 @@ HOST-OWNED EVIDENCE TOOLS:
 - `read_repo_eval_asset_excerpt`
 
 GOAL:
-Generate semantic probe intents that fit the discovered eval method and native row conventions for each target. Use the evidence tools before committing to native bindings, metadata hints, assertion hints, output bindings, or native reference-output shapes.
+Generate semantic probe intents that fit the discovered eval method and native row conventions for each target. Use the evidence tools to study native sample rows, repo-local eval assets, and evaluator dossiers before choosing the semantic input shape, behavior under test, pass criteria, and failure mode. The host will derive target wiring details from the selected gap and discovered target evidence.
 
 QUALITY CRITERIA:
 - Specific to the diff
@@ -65,14 +65,14 @@ QUALITY CRITERIA:
 - The host will rerank, diversify, and keep at most {proposal_limit} final intents for review
 
 RULES:
-- Respect the `target_id` and `method_kind` in each gap.
-- Use the evidence tools to inspect native sample rows, field patterns, repo-local eval assets, and evaluator dossiers before you choose `native_input_binding`, `native_output_binding`, `native_reference_output`, `native_metadata_hints`, `native_tag_hints`, `native_assertion_hints`, `evaluator_dossier_id`, or `preferred_evaluator_binding`.
-- Use multi-turn conversation histories when `is_conversational` is true.
+- Respect the `gap_id` you choose. The host will derive `target_id`, `method_kind`, `related_risk_flag`, default evaluator selection, native bindings, tags, and assertion scaffolding from that gap and the resolved target evidence.
+- Populate exactly one of `string_input`, `dict_input`, or `conversation_input`.
+- Set `input_format` to match the populated input field.
+- When `conversation_input` is used, emit an array of `{{role, content}}` messages.
+- Use multi-turn conversation histories when the gap is conversational. Prefer `conversation_input` over `string_input` for conversational gaps.
+- Only use `dict_input` when the native target clearly expects structured object inputs from the evidence.
 - For bootstrap gaps, generate plausible starter eval intents without pretending there is existing corpus coverage.
 - Make `pass_criteria` explicit enough for a deterministic renderer to map into native assertions.
-- Populate `native_reference_output` when the target’s existing rows use a structured reference output or a non-default output key that should be preserved.
-- Populate `evaluator_dossier_id` when one discovered dossier clearly matches the intended evaluator regime; otherwise leave it null.
-- Only populate `preferred_evaluator_binding` when the discovered evaluator regime is clear from the target evidence; otherwise leave it null.
 - `failure_mode` should explain the likely miss or regression the eval should expose.
 
 Output EvalIntentCandidateBundle JSON only. No prose.

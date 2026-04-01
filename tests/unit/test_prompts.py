@@ -154,7 +154,7 @@ def test_stage3_prompt_describes_native_eval_synthesis() -> None:
                     "priority": "high",
                     "profile_status": "confirmed",
                     "guardrail_direction": None,
-                    "is_conversational": False,
+                    "is_conversational": True,
                     "confidence": 0.84
                 }
             ],
@@ -169,8 +169,9 @@ def test_stage3_prompt_describes_native_eval_synthesis() -> None:
     assert "list_evaluator_dossiers" in prompt
     assert "read_evaluator_dossier" in prompt
     assert "native-feeling row attributes" in prompt
-    assert "evaluator_dossier_id" in prompt
-    assert "preferred_evaluator_binding" in prompt
+    assert "Populate exactly one of `string_input`, `dict_input`, or `conversation_input`." in prompt
+    assert "The host will derive `target_id`, `method_kind`, `related_risk_flag`" in prompt
+    assert "Prefer `conversation_input` over `string_input` for conversational gaps." in prompt
     assert "Generate up to 10 candidate intents" in prompt
     assert "keep at most 4 final intents" in prompt
     assert "Output EvalIntentCandidateBundle JSON only" in prompt

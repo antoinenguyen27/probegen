@@ -28,11 +28,13 @@ from parity.models.manifests import (
     split_artifact_path,
 )
 from parity.models.proposal import (
+    ConversationMessageDraft,
     EvalIntentCandidateBundle,
     EvalProposalManifest,
     EvaluatorPlan,
     NativeEvalRendering,
     ProbeIntent,
+    ProbeIntentDraft,
     RenderArtifact,
 )
 from parity.models.raw_change_data import ChangedArtifact, RawChangeData, content_sha256
@@ -52,6 +54,7 @@ __all__ = [
     "ChangedArtifact",
     "CompoundChange",
     "ConversationMessage",
+    "ConversationMessageDraft",
     "CoverageGap",
     "CoverageTargetSummary",
     "EvalAnalysisManifest",
@@ -70,6 +73,7 @@ __all__ = [
     "ObservableBehaviorDelta",
     "NormalizedProjection",
     "ProbeIntent",
+    "ProbeIntentDraft",
     "RawChangeData",
     "RenderArtifact",
     "RepoAssetReference",

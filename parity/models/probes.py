@@ -6,6 +6,7 @@ from parity.models.proposal import (
     EvaluatorPlan,
     NativeEvalRendering,
     ProbeIntent,
+    ProbeIntentDraft,
     RenderArtifact,
 )
 
@@ -15,5 +16,6 @@ __all__ = [
     "EvaluatorPlan",
     "NativeEvalRendering",
     "ProbeIntent",
+    "ProbeIntentDraft",
     "RenderArtifact",
 ]
